@@ -1,0 +1,9 @@
+[INFO] Local run log: logs\sniffer-20260309T174117.229080Z-d1c863bc.log
+[INFO] Using profile dir: .playwright_profile\facebook_personal\chromium
+[INFO] detail_description_enabled=True detail_description_max_pages=8
+[ERROR] Navigation or selector timeout: Page.wait_for_selector: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("a[href*='/marketplace/item/']") to be visible
+    63 × locator resolved to 24 elements. Proceeding with the first one: <a role="link" tabindex="0" href="/marketplace/item/906232908960370/?ref=search&referral_code=null&referral_story_type=post&tracking=browse_serp%3Afd0d30f2-80eb-4f73-a44c-b92ec0f83625&__tn__=!%3AD" class="x1i10hfl xjbqb8w x1ejq31n x18oe1m7 x1sy0etr xstzfhl x972fbf x10w94by x1qhh985 x14e42zd x9f619 x1ypdohk xt0psk2 x3ct3a4 xdj266r x14z9mp xat24cr x1lziwak xexx8yu xyri2b x18d9i69 x1c1uobl x16tdsg8 x1hl2dhg xggy1nq x1a2a7pz x1heor9g xkrqix3 x1sur9pj x1s688f x1lku1pv">…</a>
+
+[SUMMARY] run_id=d1c863bc-595d-4a68-9e79-8dfdbcaeccca status=failed cards_seen=0 rows_extracted=0 rows_upserted=0 rows_failed=0 rows_enriched_description=0 elapsed_seconds=51.74

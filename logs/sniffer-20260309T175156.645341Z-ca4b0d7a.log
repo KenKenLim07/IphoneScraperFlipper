@@ -1,0 +1,8 @@
+[INFO] Local run log: logs\sniffer-20260309T175156.645341Z-ca4b0d7a.log
+[INFO] Using profile dir: .playwright_profile\facebook_personal\chromium
+[INFO] detail_description_enabled=True detail_description_max_pages=8
+[WARN] Location upsert/link failed: {'message': "Could not find the table 'public.iaase_locations' in the schema cache", 'code': 'PGRST205', 'hint': "Perhaps you meant the table 'public.iaase_scrape_runs'", 'details': None}
+[WARN] Failed upsert listing_id=1472443244455414: {'message': "Could not find the 'location_id' column of 'iaase_raw_listings' in the schema cache", 'code': 'PGRST204', 'hint': None, 'details': None}
+[ERROR] Supabase writes failed for all records.
+[WARN] Failed to write run log: {'message': "Could not find the 'locations_upserted' column of 'iaase_scrape_runs' in the schema cache", 'code': 'PGRST204', 'hint': None, 'details': None}
+[SUMMARY] run_id=ca4b0d7a-4075-414a-932d-bbce44ea355d status=failed cards_seen=1 rows_extracted=1 rows_upserted=0 rows_failed=1 rows_enriched_description=1 rows_enriched_location=0 locations_upserted=0 elapsed_seconds=31.72

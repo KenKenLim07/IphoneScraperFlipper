@@ -1,0 +1,9 @@
+[INFO] Local run log: logs\sniffer-20260309T192314.931291Z-eadb2e8a.log
+[INFO] Using profile dir: .playwright_profile\facebook_personal\chromium
+[INFO] detail_description_enabled=True detail_description_max_pages=8
+[INFO] not_seen_deactivate_runs=3 watchlist_recheck_limit=8
+[ERROR] Navigation or selector timeout: Page.wait_for_selector: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("a[href*='/marketplace/item/']")
+
+[SUMMARY] run_id=eadb2e8a-03c6-4f93-8d21-53371d525bb8 status=failed cards_seen=0 rows_extracted=0 rows_upserted=0 rows_failed=0 rows_enriched_description=0 rows_enriched_location=0 rows_detected_sold=0 rows_detected_unavailable=0 rows_watchlist_rechecked=0 locations_upserted=0 rows_changed=0 versions_inserted=0 rows_missing_seen=0 rows_marked_not_seen=0 elapsed_seconds=35.55
