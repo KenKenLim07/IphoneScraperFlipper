@@ -1,4 +1,0 @@
-[INFO] Local run log: logs\sniffer-20260309T175506.287111Z-ad6e1212.log
-[INFO] Using profile dir: .playwright_profile\facebook_personal\chromium
-[INFO] detail_description_enabled=True detail_description_max_pages=8
-[SUMMARY] run_id=ad6e1212-10e5-408d-92dc-6be821fe9813 status=success cards_seen=9 rows_extracted=9 rows_upserted=9 rows_failed=0 rows_enriched_description=8 rows_enriched_location=0 locations_upserted=3 elapsed_seconds=75.26

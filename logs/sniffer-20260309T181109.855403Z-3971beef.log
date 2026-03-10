@@ -1,7 +1,0 @@
-[INFO] Local run log: logs\sniffer-20260309T181109.855403Z-3971beef.log
-[INFO] Using profile dir: .playwright_profile\facebook_personal\chromium
-[INFO] detail_description_enabled=True detail_description_max_pages=8
-[INFO] not_seen_deactivate_runs=3
-[INFO] Dry-run mode enabled, skipping Supabase write.
-{"listing_id": "905067112161247", "url": "https://www.facebook.com/marketplace/item/905067112161247/?ref=search&referral_code=null&referral_story_type=post&tracking=browse_serp%3A6ffb8a8c-8118-4c8b-8570-c12c01047707&__tn__=!%3AD", "title": "Iphone 13pro max", "description": "Condition | Used - Good | Iloilo city only", "location_raw": "Iloilo City, PH-06", "location_id": null, "price_raw": "PHP30,000", "listing_status": "active", "content_hash": null, "scraped_at": "2026-03-09T18:11:29.453659Z", "run_id": "3971beef-0714-4d28-a9c0-b63ec70b4f70", "first_seen_at": null, "last_seen_at": "2026-03-09T18:11:29.453659Z", "last_seen_run_id": "3971beef-0714-4d28-a9c0-b63ec70b4f70", "last_changed_at": null, "sold_at": null, "missing_run_count": 0, "is_active": true, "source": "facebook_marketplace", "query_url": "https://www.facebook.com/marketplace/iloilo/search?query=iphone&sortBy=creation_time_descend"}
-[SUMMARY] run_id=3971beef-0714-4d28-a9c0-b63ec70b4f70 status=success cards_seen=1 rows_extracted=1 rows_upserted=0 rows_failed=0 rows_enriched_description=1 rows_enriched_location=0 rows_detected_sold=0 rows_detected_unavailable=0 locations_upserted=0 rows_changed=0 versions_inserted=0 rows_missing_seen=0 rows_marked_not_seen=0 elapsed_seconds=38.72

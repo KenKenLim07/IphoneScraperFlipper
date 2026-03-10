@@ -1,7 +1,0 @@
-[INFO] Local run log: logs\sniffer-20260309T183333.348758Z-b05ee993.log
-[INFO] Using profile dir: .playwright_profile\facebook_personal\chromium
-[INFO] detail_description_enabled=True detail_description_max_pages=8
-[INFO] not_seen_deactivate_runs=3 watchlist_recheck_limit=8
-[ERROR] Unexpected scrape failure: {'message': 'column iaase_raw_listings.listing_status does not exist', 'code': '42703', 'hint': None, 'details': None}
-[WARN] Failed to write run log: {'message': "Could not find the 'rows_changed' column of 'iaase_scrape_runs' in the schema cache", 'code': 'PGRST204', 'hint': None, 'details': None}
-[SUMMARY] run_id=b05ee993-d5ef-4617-9a62-8adc88aa0a70 status=failed cards_seen=1 rows_extracted=1 rows_upserted=0 rows_failed=0 rows_enriched_description=1 rows_enriched_location=0 rows_detected_sold=0 rows_detected_unavailable=0 rows_watchlist_rechecked=0 locations_upserted=0 rows_changed=0 versions_inserted=0 rows_missing_seen=0 rows_marked_not_seen=0 elapsed_seconds=57.43

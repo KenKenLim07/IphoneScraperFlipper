@@ -1,6 +1,0 @@
-[INFO] Local run log: logs\sniffer-20260309T184332.264698Z-1bbfdde9.log
-[INFO] Using profile dir: .playwright_profile\facebook_personal\chromium
-[INFO] detail_description_enabled=True detail_description_max_pages=8
-[INFO] not_seen_deactivate_runs=3 watchlist_recheck_limit=8
-[WARN] Missing-listing status update failed: {'message': 'null value in column "url" of relation "iaase_raw_listings" violates not-null constraint', 'code': '23502', 'hint': None, 'details': 'Failing row contains (45, 2157110415029519, null, null, null, null, null, null, 2026-03-09 18:47:19.612307+00, null, null, null, null, active, , null, null, null, 2026-03-09 18:47:19.723672+00, null, 1, t).'}
-[SUMMARY] run_id=1bbfdde9-9476-46d1-86eb-5adcc0e992d6 status=success cards_seen=9 rows_extracted=17 rows_upserted=17 rows_failed=0 rows_enriched_description=15 rows_enriched_location=3 rows_detected_sold=0 rows_detected_unavailable=0 rows_watchlist_rechecked=8 locations_upserted=3 rows_changed=16 versions_inserted=16 rows_missing_seen=0 rows_marked_not_seen=0 elapsed_seconds=227.98
