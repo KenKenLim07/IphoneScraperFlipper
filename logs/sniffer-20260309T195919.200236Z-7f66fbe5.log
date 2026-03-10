@@ -1,0 +1,7 @@
+[INFO] Local run log: logs\sniffer-20260309T195919.200236Z-7f66fbe5.log
+[INFO] Using profile dir: .playwright_profile\facebook_personal\chromium
+[INFO] runtime browser_channel=chromium headless=False use_stealth=False
+[INFO] detail_description_enabled=True detail_description_max_pages=8
+[INFO] not_seen_deactivate_runs=3 watchlist_recheck_limit=8
+[ERROR] Facebook session looks logged out or blocked for this profile/channel. Run --bootstrap-login with the same --browser-channel.
+[SUMMARY] run_id=7f66fbe5-6ada-4a0d-a255-5c196e0a2b03 status=failed cards_seen=0 rows_extracted=0 rows_upserted=0 rows_failed=0 rows_enriched_description=0 rows_enriched_location=0 rows_detected_sold=0 rows_detected_unavailable=0 rows_watchlist_rechecked=0 locations_upserted=0 rows_changed=0 versions_inserted=0 rows_missing_seen=0 rows_marked_not_seen=0 elapsed_seconds=17.16

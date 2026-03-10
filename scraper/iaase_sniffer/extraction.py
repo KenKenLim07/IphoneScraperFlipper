@@ -25,7 +25,12 @@ from .constants import (
     TITLE_NOISE_RE,
     UNAVAILABLE_MARKERS,
 )
-from .helpers import clean_text, make_absolute_facebook_url, utc_now_iso
+from .helpers import (
+    canonicalize_facebook_marketplace_item_url,
+    clean_text,
+    make_absolute_facebook_url,
+    utc_now_iso,
+)
 from .models import ListingRecord
 
 
@@ -127,6 +132,17 @@ def is_location_like_description(value: str | None) -> bool:
     if not cleaned:
         return True
     if LOCATION_LINE_RE.fullmatch(cleaned):
+        return True
+    return False
+
+
+def is_weak_description(value: str | None) -> bool:
+    cleaned = clean_text(value)
+    if not cleaned:
+        return True
+    if is_location_like_description(cleaned):
+        return True
+    if len(cleaned) < 20:
         return True
     return False
 
@@ -333,10 +349,11 @@ def normalize_records(
     by_id: dict[str, ListingRecord] = {}
     scraped_at = utc_now_iso()
     for row in raw_rows:
-        url = make_absolute_facebook_url(str(row.get("href", "")))
-        listing_id = extract_listing_id(url)
+        raw_url = make_absolute_facebook_url(str(row.get("href", "")))
+        listing_id = extract_listing_id(raw_url)
         if not listing_id:
             continue
+        url = canonicalize_facebook_marketplace_item_url(raw_url, listing_id=listing_id)
         title = clean_text((row.get("title") or row.get("anchorText") or None))
         if is_price_only_text(title):
             title = infer_title_from_card_text(row.get("cardText"))
@@ -489,7 +506,17 @@ def enrich_descriptions_from_details(
     sold_count = 0
     unavailable_count = 0
     inspected = 0
-    for idx, record in enumerate(updated):
+    prioritized_indices = sorted(
+        range(len(updated)),
+        key=lambda idx: (
+            0
+            if (not updated[idx].location_raw or is_weak_description(updated[idx].description))
+            else 1
+        ),
+    )
+
+    for idx in prioritized_indices:
+        record = updated[idx]
         if inspected >= max_pages:
             break
         inspected += 1
@@ -497,7 +524,7 @@ def enrich_descriptions_from_details(
         try:
             detail_desc, detail_location, detail_status = extract_detail_fields(page, record)
             next_record = record
-            if detail_desc and is_location_like_description(record.description):
+            if detail_desc and is_weak_description(record.description):
                 next_record = replace(next_record, description=detail_desc)
                 desc_enriched_count += 1
             if detail_location and not record.location_raw:

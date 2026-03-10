@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from typing import Any
 
 
@@ -39,3 +40,11 @@ def make_absolute_facebook_url(raw_href: str) -> str:
         return f"https://www.facebook.com{href}"
     return f"https://www.facebook.com/{href.lstrip('/')}"
 
+
+def canonicalize_facebook_marketplace_item_url(raw_url: str, listing_id: str | None = None) -> str:
+    if listing_id is None:
+        match = re.search(r"/marketplace/item/(\d+)", raw_url or "")
+        listing_id = match.group(1) if match else None
+    if listing_id:
+        return f"https://www.facebook.com/marketplace/item/{listing_id}/"
+    return make_absolute_facebook_url(raw_url)

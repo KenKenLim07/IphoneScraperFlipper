@@ -27,6 +27,7 @@ from .constants import MARKETPLACE_ANCHOR_SELECTOR
 from .extraction import (
     enrich_descriptions_from_details,
     extract_visible_cards,
+    looks_like_login_or_block,
     maybe_apply_stealth,
     normalize_location_key,
     normalize_records,
@@ -95,6 +96,10 @@ def main() -> int:
     Path(profile_dir).mkdir(parents=True, exist_ok=True)
     print(f"[INFO] Using profile dir: {profile_dir}")
     print(
+        f"[INFO] runtime browser_channel={browser_channel} headless={headless} "
+        f"use_stealth={use_stealth}"
+    )
+    print(
         f"[INFO] detail_description_enabled={detail_desc_enabled} "
         f"detail_description_max_pages={detail_desc_max_pages}"
     )
@@ -149,6 +154,7 @@ def main() -> int:
     exit_code = 0
 
     records = []
+    page = None
 
     try:
         with sync_playwright() as p:
@@ -167,7 +173,36 @@ def main() -> int:
             except PlaywrightTimeoutError:
                 pass
 
-            page.wait_for_selector(MARKETPLACE_ANCHOR_SELECTOR, state="attached", timeout=30000)
+            if looks_like_login_or_block(page):
+                raise RuntimeError(
+                    "Facebook session looks logged out or blocked for this profile/channel. "
+                    "Run --bootstrap-login with the same --browser-channel."
+                )
+
+            try:
+                page.wait_for_selector(MARKETPLACE_ANCHOR_SELECTOR, state="attached", timeout=30000)
+            except PlaywrightTimeoutError as exc:
+                current_url = page.url
+                page_title = ""
+                body_hint = ""
+                try:
+                    page_title = page.title()
+                except Exception:
+                    page_title = ""
+                try:
+                    body_hint = (page.inner_text("body", timeout=3000) or "")[:260].replace("\n", " ")
+                except Exception:
+                    body_hint = ""
+                if looks_like_login_or_block(page):
+                    raise RuntimeError(
+                        "Facebook session looks logged out or blocked for this profile/channel. "
+                        "Run --bootstrap-login with the same --browser-channel."
+                    ) from exc
+                raise RuntimeError(
+                    "Marketplace listings were not detected in time. "
+                    f"url={current_url} title={page_title!r} body_hint={body_hint!r}"
+                ) from exc
+
             raw_rows = extract_visible_cards(page, max_cards=max(1, args.max_cards))
             records, cards_seen = normalize_records(raw_rows, query_url=query_url, run_id=run_id)
             rows_extracted = len(records)
@@ -228,6 +263,11 @@ def main() -> int:
 
     except PlaywrightTimeoutError as exc:
         print(f"[ERROR] Navigation or selector timeout: {exc}", file=sys.stderr)
+        if page is not None:
+            try:
+                print(f"[DEBUG] final_url={page.url}", file=sys.stderr)
+            except Exception:
+                pass
         status = "failed"
         exit_code = 3
         run_errors.append({"stage": "navigation", "error": str(exc)[:400]})

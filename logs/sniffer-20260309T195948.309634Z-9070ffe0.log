@@ -1,0 +1,9 @@
+[INFO] Local run log: logs\sniffer-20260309T195948.309634Z-9070ffe0.log
+[INFO] Using profile dir: .playwright_profile\facebook_personal\chromium
+[INFO] runtime browser_channel=chromium headless=False use_stealth=False
+[INFO] detail_description_enabled=True detail_description_max_pages=8
+[INFO] not_seen_deactivate_runs=3 watchlist_recheck_limit=8
+[INFO] Bootstrap login started.
+[INFO] Browser channel: chromium
+[INFO] A browser window will open to Facebook login. Sign in, then press Enter here.
+Press Enter after login is complete and Marketplace loads in this profile...[INFO] Profile session saved.

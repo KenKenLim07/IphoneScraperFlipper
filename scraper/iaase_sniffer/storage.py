@@ -22,7 +22,7 @@ from .extraction import (
     normalize_location_key,
     parse_location_components,
 )
-from .helpers import clean_text
+from .helpers import canonicalize_facebook_marketplace_item_url, clean_text
 from .models import ListingRecord
 
 
@@ -98,9 +98,10 @@ def listing_from_db_row(row: dict[str, Any], run_id: str, scraped_at: str, query
     url = str(row.get("url") or "").strip()
     if not listing_id or not url:
         return None
+    canonical_url = canonicalize_facebook_marketplace_item_url(url, listing_id=listing_id)
     return ListingRecord(
         listing_id=listing_id,
-        url=url,
+        url=canonical_url,
         title=row.get("title"),
         description=row.get("description"),
         location_raw=row.get("location_raw"),
@@ -130,30 +131,53 @@ def fetch_watchlist_candidates(
 ) -> list[dict[str, Any]]:
     if limit <= 0:
         return []
-    response = (
+
+    select_cols = (
+        "listing_id,url,title,description,location_raw,location_id,price_raw,listing_status,"
+        "content_hash,first_seen_at,last_seen_at,last_seen_run_id,last_changed_at,sold_at,"
+        "missing_run_count,is_active,query_url"
+    )
+
+    def filter_rows(rows: list[dict[str, Any]], out: list[dict[str, Any]], seen: set[str]) -> None:
+        for row in rows:
+            listing_id = str(row.get("listing_id") or "")
+            if not listing_id or listing_id in exclude_listing_ids or listing_id in seen:
+                continue
+            status = str(row.get("listing_status") or LISTING_STATUS_ACTIVE)
+            if status not in {LISTING_STATUS_ACTIVE, LISTING_STATUS_NOT_SEEN}:
+                continue
+            out.append(row)
+            seen.add(listing_id)
+            if len(out) >= limit:
+                return
+
+    filtered: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+
+    # Prioritize rows that still have missing location to accelerate backfill.
+    null_loc_response = (
         client.table(SUPABASE_TABLE)
-        .select(
-            "listing_id,url,title,description,location_raw,location_id,price_raw,listing_status,"
-            "content_hash,first_seen_at,last_seen_at,last_seen_run_id,last_changed_at,sold_at,"
-            "missing_run_count,is_active,query_url"
-        )
+        .select(select_cols)
         .eq("query_url", query_url)
+        .is_("location_raw", "null")
         .order("last_seen_at")
-        .limit(max(limit * 3, limit))
+        .limit(max(limit * 2, limit))
         .execute()
     )
-    rows = response.data or []
-    filtered: list[dict[str, Any]] = []
-    for row in rows:
-        listing_id = str(row.get("listing_id") or "")
-        if not listing_id or listing_id in exclude_listing_ids:
-            continue
-        status = str(row.get("listing_status") or LISTING_STATUS_ACTIVE)
-        if status not in {LISTING_STATUS_ACTIVE, LISTING_STATUS_NOT_SEEN}:
-            continue
-        filtered.append(row)
-        if len(filtered) >= limit:
-            break
+    filter_rows(null_loc_response.data or [], filtered, seen_ids)
+    if len(filtered) >= limit:
+        return filtered
+
+    remaining = limit - len(filtered)
+    response = (
+        client.table(SUPABASE_TABLE)
+        .select(select_cols)
+        .eq("query_url", query_url)
+        .order("last_seen_at")
+        .limit(max(remaining * 3, remaining))
+        .execute()
+    )
+    filter_rows(response.data or [], filtered, seen_ids)
     return filtered
 
 
