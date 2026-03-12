@@ -6,6 +6,7 @@ import {
   canonicalMarketplaceItemUrl,
   cleanText,
   extractListingId,
+  extractBestPhpPriceRaw,
   extractPrice,
   inferDescription,
   inferLocation,
@@ -18,15 +19,35 @@ import {
 function isLikelyMarketplaceResponse(url, contentType) {
   const lowerUrl = String(url || "").toLowerCase();
   const lowerType = String(contentType || "").toLowerCase();
-  if (!lowerType.includes("application/json")) return false;
-  if (lowerUrl.includes("graphql") || lowerUrl.includes("marketplace")) return true;
-  return false;
+  // Facebook often serves GraphQL as JSON, but content-type can vary.
+  if (lowerUrl.includes("graphql")) return true;
+  if (lowerUrl.includes("/api/graphql")) return true;
+  if (lowerType.includes("application/json") && lowerUrl.includes("marketplace")) return true;
+  return lowerType.includes("application/json") && (lowerUrl.includes("graphql") || lowerUrl.includes("marketplace"));
+}
+
+function safeParseJsonish(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  const cleaned = raw.replace(/^for\s*\(\s*;\s*;\s*\)\s*;\s*/, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    return null;
+  }
 }
 
 function normalizeNetworkListing(node) {
   if (!node || typeof node !== "object") return null;
   const listing = node.listing && typeof node.listing === "object" ? node.listing : node;
-  const listingId = listing.listing_id || listing.id || node.listing_id || node.id;
+  const listingType = cleanText(listing.__typename) || cleanText(node.__typename) || "";
+  const allowIdFallback =
+    listingType === "GroupCommerceProductItem" ||
+    listingType.toLowerCase().includes("marketplace");
+
+  // Marketplace listing id is sometimes `listing_id`, sometimes just `id` on listing objects.
+  // Never use the feed-story node's `id` (it contains colon-delimited story metadata).
+  const listingId = listing.listing_id || node.listing_id || (allowIdFallback ? listing.id : null);
   if (!listingId) return null;
   const title =
     listing.marketplace_listing_title ||
@@ -34,6 +55,13 @@ function normalizeNetworkListing(node) {
     listing.listing_title ||
     node.marketplace_listing_title ||
     node.title ||
+    null;
+  const description =
+    listing.marketplace_listing_description ||
+    listing.marketplace_description ||
+    listing.description ||
+    node.marketplace_listing_description ||
+    node.description ||
     null;
   const priceObj = listing.listing_price || listing.price || node.listing_price || node.price || null;
   let priceRaw = null;
@@ -50,6 +78,9 @@ function normalizeNetworkListing(node) {
   } else if (typeof priceObj === "string" || typeof priceObj === "number") {
     priceRaw = String(priceObj);
   }
+
+  // If we can't see a price at all, it's very likely not a listing card node (avoid false positives like profile ids).
+  if (!cleanText(priceRaw)) return null;
 
   const locationObj =
     listing.location ||
@@ -77,7 +108,7 @@ function normalizeNetworkListing(node) {
     listing_id: String(listingId),
     url,
     title: cleanText(title),
-    description: null,
+    description: cleanText(description),
     location_raw: cleanText(locationRaw),
     price_raw: cleanText(priceRaw),
     price_php: parsePhpPrice(priceRaw),
@@ -114,31 +145,154 @@ async function scrollPage(page, delayMs) {
   if (delayMs > 0) await sleep(delayMs);
 }
 
+async function extractFromDom(page, { maxCards, scrollPages, scrollDelayMs, runId, scrapedAt, logEnabled, log, seenInRun }) {
+  const seenAnchors = new Set();
+  const rawRows = [];
+  const totalPasses = Math.max(0, scrollPages) + 1;
+  for (let pass = 0; pass < totalPasses; pass += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const batch = await page.evaluate(
+      ({ selector, maxCards }) => {
+        const anchors = Array.from(document.querySelectorAll(selector));
+        const out = [];
+        for (const a of anchors) {
+          if (out.length >= maxCards) break;
+          if (!(a instanceof HTMLAnchorElement)) continue;
+          const href = a.getAttribute("href") || "";
+          if (!href.includes("/marketplace/item/")) continue;
+          const rect = a.getBoundingClientRect();
+          if (!(rect.bottom > 0 && rect.top < window.innerHeight)) continue;
+          const card =
+            a.closest("div[role='article']") ||
+            a.closest("div[data-testid*='marketplace_feed_item']") ||
+            a.closest("div");
+          out.push({
+            href,
+            anchorText: (a.textContent || "").trim(),
+            cardText: card ? (card.innerText || "").trim() : "",
+            title:
+              card?.querySelector("h2 span")?.textContent?.trim() ||
+              card?.querySelector("span[dir='auto']")?.textContent?.trim() ||
+              card?.querySelector("div[dir='auto']")?.textContent?.trim() ||
+              null
+          });
+        }
+        return out;
+      },
+      { selector: MARKETPLACE_SELECTOR, maxCards }
+    );
+
+    for (const row of batch) {
+      if (rawRows.length >= maxCards) break;
+      const key = row.href || "";
+      if (!key || seenAnchors.has(key)) continue;
+      seenAnchors.add(key);
+      rawRows.push(row);
+    }
+    if (rawRows.length >= maxCards) break;
+    if (pass < totalPasses - 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await scrollPage(page, scrollDelayMs);
+    }
+  }
+
+  let dupListingIdsSkipped = 0;
+  const seen = new Map();
+  for (const raw of rawRows) {
+    const rawUrl = makeAbsoluteFacebookUrl(raw.href);
+    const listingId = extractListingId(rawUrl);
+    if (!listingId) continue;
+    if (seenInRun.has(listingId)) {
+      dupListingIdsSkipped += 1;
+      continue;
+    }
+    seenInRun.add(listingId);
+    const url = canonicalMarketplaceItemUrl(rawUrl, listingId);
+    const title = inferTitle(raw.cardText, raw.title || raw.anchorText);
+    const priceRaw = extractBestPhpPriceRaw(raw.cardText) || extractPrice(raw.cardText);
+    const pricePhp = parsePhpPrice(priceRaw);
+    const locationRaw = inferLocation(raw.cardText);
+    const description = inferDescription(raw.cardText, title, priceRaw);
+    if (logEnabled) {
+      log(
+        `[INFO] row_extracted listing_id=${listingId} title=${title || "n/a"} price=${priceRaw || "n/a"} ` +
+          `location=${locationRaw || "n/a"}`
+      );
+    }
+    seen.set(listingId, {
+      listing_id: listingId,
+      url,
+      title,
+      description,
+      location_raw: locationRaw,
+      price_raw: priceRaw,
+      price_php: pricePhp,
+      listing_status: "active",
+      scraped_at: scrapedAt,
+      run_id: runId
+    });
+  }
+
+  return { rows: Array.from(seen.values()), cardsSeen: rawRows.length, dupListingIdsSkipped };
+}
+
 export async function extractDiscoveryRows(page, opts) {
   const {
     maxCards,
     scrollPages,
     scrollDelayMs,
+    selectorTimeoutMs,
     useNetwork,
-    saveNetworkRaw,
-    runId,
-    logEnabled,
-    log
+  saveNetworkRaw,
+  runId,
+  logEnabled,
+  log
   } = opts;
 
   const networkPayloads = [];
   const networkListings = new Map();
-  let networkResponses = 0;
+  let networkCandidates = 0;
+  let networkJsonResponses = 0;
+  let firstParsed = null;
+  let networkDebugLogged = 0;
+  const networkDebug = String(process.env.SCRAPE_NETWORK_DEBUG || "").trim().toLowerCase();
+  const networkDebugEnabled = ["1", "true", "yes", "on"].includes(networkDebug);
+  const networkDebugAll = ["1", "true", "yes", "on"].includes(
+    String(process.env.SCRAPE_NETWORK_DEBUG_ALL || "").trim().toLowerCase()
+  );
 
   if (useNetwork) {
     page.on("response", async (response) => {
       try {
         const contentType = response.headers()["content-type"] || "";
-        if (!isLikelyMarketplaceResponse(response.url(), contentType)) return;
-        networkResponses += 1;
-        const data = await response.json();
+        const url = response.url();
+        const isCandidate = isLikelyMarketplaceResponse(url, contentType);
+        if ((networkDebugAll || (networkDebugEnabled && isCandidate)) && networkDebugLogged < 30) {
+          networkDebugLogged += 1;
+          log?.(
+            `[INFO] network_debug url=${url} status=${response.status()} content_type=${String(contentType).slice(0, 80)}`
+          );
+        }
+
+        if (!isCandidate) return;
+        networkCandidates += 1;
+        const text = await response.text();
+        const data = safeParseJsonish(text);
+        if (!data) {
+          if (networkDebugEnabled) {
+            const status = response.status();
+            const preview = cleanText(text)?.slice(0, 120) || "n/a";
+            log?.(
+              `[WARN] graphql_non_json status=${status} content_type=${String(contentType).slice(0, 60)} ` +
+                `preview="${preview}"`
+            );
+          }
+          return;
+        }
+        networkJsonResponses += 1;
+        if (!firstParsed) firstParsed = { url, data };
         if (saveNetworkRaw && networkPayloads.length < 50) {
-          networkPayloads.push({ url: response.url(), data });
+          networkPayloads.push({ url, data });
         }
         const networkMap = new Map();
         collectNetworkListings(data, networkMap);
@@ -149,7 +303,43 @@ export async function extractDiscoveryRows(page, opts) {
     });
   }
 
-  await page.waitForSelector(MARKETPLACE_SELECTOR, { timeout: 30000 });
+  try {
+    await page.waitForSelector(MARKETPLACE_SELECTOR, { timeout: Math.max(1, selectorTimeoutMs || 60000) });
+  } catch (err) {
+    try {
+      const logsDir = path.resolve("logs");
+      fs.mkdirSync(logsDir, { recursive: true });
+
+      const finalUrl = cleanText(page.url()) || "n/a";
+      let title = "n/a";
+      try {
+        title = cleanText(await page.title()) || "n/a";
+      } catch {}
+
+      let bodyPreview = "n/a";
+      try {
+        const bodyText = await page.evaluate(() => document.body?.innerText || "");
+        bodyPreview = cleanText(bodyText)?.slice(0, 240) || "n/a";
+      } catch {}
+
+      const htmlPath = path.join(logsDir, `feed-timeout-${runId}.html`);
+      try {
+        const html = await page.content();
+        fs.writeFileSync(htmlPath, html);
+      } catch {}
+
+      const screenshotPath = path.join(logsDir, `feed-timeout-${runId}.png`);
+      try {
+        await page.screenshot({ path: screenshotPath, fullPage: false });
+      } catch {}
+
+      log?.(
+        `[ERROR] discovery_feed_timeout timeout_ms=${Math.max(1, selectorTimeoutMs || 60000)} final_url=${finalUrl} title=${title} ` +
+          `body_preview="${bodyPreview}" debug_html=${htmlPath} debug_png=${screenshotPath}`
+      );
+    } catch {}
+    throw err;
+  }
 
   let cardsSeen = 0;
   let rows = [];
@@ -157,103 +347,93 @@ export async function extractDiscoveryRows(page, opts) {
   const seenInRun = new Set();
   const scrapedAt = new Date().toISOString();
 
-  if (useNetwork && networkListings.size > 0) {
-    if (logEnabled) log(`[INFO] data_source=network_json network_listings=${networkListings.size}`);
-    cardsSeen = networkListings.size;
-    rows = Array.from(networkListings.values()).map((row) => ({
+  if (useNetwork) {
+    // Network-first: scroll to trigger GraphQL payloads, then fall back to DOM to top-up.
+    const totalPasses = Math.max(0, scrollPages) + 1;
+    for (let pass = 0; pass < totalPasses - 1; pass += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await scrollPage(page, scrollDelayMs);
+    }
+    // Give the response listener a short moment to finish parsing the last payload.
+    await sleep(300);
+
+    const fromNetworkAll = Array.from(networkListings.values()).map((row) => ({
       ...row,
       scraped_at: scrapedAt,
       run_id: runId
     }));
-  } else {
-    if (logEnabled) log(`[INFO] data_source=dom network_listings=0 network_responses=${networkResponses}`);
-    const seenAnchors = new Set();
-    const rawRows = [];
-    const totalPasses = Math.max(0, scrollPages) + 1;
-    for (let pass = 0; pass < totalPasses; pass += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      const batch = await page.evaluate(
-        ({ selector, maxCards }) => {
-          const anchors = Array.from(document.querySelectorAll(selector));
-          const out = [];
-          for (const a of anchors) {
-            if (out.length >= maxCards) break;
-            if (!(a instanceof HTMLAnchorElement)) continue;
-            const href = a.getAttribute("href") || "";
-            if (!href.includes("/marketplace/item/")) continue;
-            const rect = a.getBoundingClientRect();
-            if (!(rect.bottom > 0 && rect.top < window.innerHeight)) continue;
-            const card =
-              a.closest("div[role='article']") ||
-              a.closest("div[data-testid*='marketplace_feed_item']") ||
-              a.closest("div");
-            out.push({
-              href,
-              anchorText: (a.textContent || "").trim(),
-              cardText: card ? (card.innerText || "").trim() : "",
-              title:
-                card?.querySelector("h2 span")?.textContent?.trim() ||
-                card?.querySelector("span[dir='auto']")?.textContent?.trim() ||
-                card?.querySelector("div[dir='auto']")?.textContent?.trim() ||
-                null
-            });
-          }
-          return out;
-        },
-        { selector: MARKETPLACE_SELECTOR, maxCards }
-      );
+    const fromNetwork = fromNetworkAll.slice(0, maxCards);
 
-      for (const row of batch) {
-        if (rawRows.length >= maxCards) break;
-        const key = row.href || "";
-        if (!key || seenAnchors.has(key)) continue;
-        seenAnchors.add(key);
-        rawRows.push(row);
-      }
-      if (rawRows.length >= maxCards) break;
-      if (pass < totalPasses - 1) {
-        // eslint-disable-next-line no-await-in-loop
-        await scrollPage(page, scrollDelayMs);
-      }
+    const merged = new Map();
+    for (const row of fromNetwork) {
+      if (!row?.listing_id) continue;
+      merged.set(String(row.listing_id), row);
+      seenInRun.add(String(row.listing_id));
     }
 
-    cardsSeen = rawRows.length;
-    const seen = new Map();
-    for (const raw of rawRows) {
-      const rawUrl = makeAbsoluteFacebookUrl(raw.href);
-      const listingId = extractListingId(rawUrl);
-      if (!listingId) continue;
-      if (seenInRun.has(listingId)) {
-        dupListingIdsSkipped += 1;
-        continue;
-      }
-      seenInRun.add(listingId);
-      const url = canonicalMarketplaceItemUrl(rawUrl, listingId);
-      const title = inferTitle(raw.cardText, raw.title || raw.anchorText);
-      const priceRaw = extractPrice(raw.cardText);
-      const pricePhp = parsePhpPrice(priceRaw);
-      const locationRaw = inferLocation(raw.cardText);
-      const description = inferDescription(raw.cardText, title, priceRaw);
+    if (fromNetwork.length) {
       if (logEnabled) {
         log(
-          `[INFO] row_extracted listing_id=${listingId} title=${title || "n/a"} price=${priceRaw || "n/a"} ` +
-            `location=${locationRaw || "n/a"}`
+          `[INFO] data_source=network_json_first network_listings=${networkListings.size} network_candidates=${networkCandidates} ` +
+            `network_json_responses=${networkJsonResponses}`
+        );
+        if (fromNetworkAll.length !== fromNetwork.length) {
+          log(`[INFO] network_used used=${fromNetwork.length} available=${fromNetworkAll.length} max_cards=${maxCards}`);
+        }
+      }
+    } else {
+      if (logEnabled) {
+        log(
+          `[INFO] data_source=network_json_first network_listings=0 network_candidates=${networkCandidates} ` +
+            `network_json_responses=${networkJsonResponses}`
         );
       }
-      seen.set(listingId, {
-        listing_id: listingId,
-        url,
-        title,
-        description,
-        location_raw: locationRaw,
-        price_raw: priceRaw,
-        price_php: pricePhp,
-        listing_status: "active",
-        scraped_at: scrapedAt,
-        run_id: runId
-      });
     }
-    rows = Array.from(seen.values());
+
+    if (!fromNetwork.length && firstParsed && (saveNetworkRaw || networkDebugEnabled)) {
+      try {
+        const logsDir = path.resolve("logs");
+        fs.mkdirSync(logsDir, { recursive: true });
+        const target = path.join(logsDir, `graphql-sample-${runId}.json`);
+        fs.writeFileSync(target, JSON.stringify(firstParsed, null, 2));
+        log?.(`[WARN] network_no_listings_saved_sample path=${target}`);
+      } catch {}
+    }
+
+    if (merged.size < maxCards) {
+      const remaining = maxCards - merged.size;
+      const dom = await extractFromDom(page, {
+        maxCards: remaining,
+        scrollPages: 0,
+        scrollDelayMs,
+        runId,
+        scrapedAt,
+        logEnabled,
+        log,
+        seenInRun
+      });
+      dupListingIdsSkipped += dom.dupListingIdsSkipped;
+      for (const row of dom.rows) merged.set(String(row.listing_id), row);
+      if (logEnabled) log(`[INFO] data_fallback=dom_topup added=${dom.rows.length} total=${merged.size}`);
+    }
+
+    rows = Array.from(merged.values()).slice(0, maxCards);
+    cardsSeen = rows.length;
+  } else {
+    if (logEnabled) log(`[INFO] data_source=dom network_listings=0 network_responses=${networkResponses}`);
+    const dom = await extractFromDom(page, {
+      maxCards,
+      scrollPages,
+      scrollDelayMs,
+      runId,
+      scrapedAt,
+      logEnabled,
+      log,
+      seenInRun
+    });
+    rows = dom.rows;
+    cardsSeen = dom.cardsSeen;
+    dupListingIdsSkipped = dom.dupListingIdsSkipped;
   }
 
   if (saveNetworkRaw && networkPayloads.length) {
@@ -265,4 +445,3 @@ export async function extractDiscoveryRows(page, opts) {
 
   return { rows, cardsSeen, dupListingIdsSkipped };
 }
-

@@ -100,6 +100,26 @@ export function extractPrice(text) {
   return match ? cleanText(match[1]) : null;
 }
 
+export function extractBestPhpPriceRaw(text) {
+  const raw = cleanText(text);
+  if (!raw) return null;
+  const re = new RegExp(PRICE_RE.source, "gi");
+  let best = null;
+  let bestNum = null;
+  for (;;) {
+    const m = re.exec(raw);
+    if (!m) break;
+    const candidate = cleanText(m[1]);
+    const num = parsePhpPrice(candidate);
+    if (num == null) continue;
+    if (bestNum == null || num > bestNum) {
+      bestNum = num;
+      best = candidate;
+    }
+  }
+  return best;
+}
+
 export function parsePhpPrice(value) {
   if (!value) return null;
   const cleaned = String(value)
@@ -147,6 +167,14 @@ export function inferLocation(cardText) {
     if (embedded && cleanText(embedded[1])) return cleanText(embedded[1]);
   }
   return null;
+}
+
+export function normalizeLocationRaw(value) {
+  const cleaned = cleanText(value);
+  if (!cleaned) return null;
+  const listed = /^listed\s+in\s+/i;
+  if (listed.test(cleaned)) return cleanText(cleaned.replace(listed, ""));
+  return cleaned;
 }
 
 export function inferDescription(cardText, title, priceRaw) {

@@ -1,8 +1,8 @@
 # Iloilo iPhone Arbitrage & Automated Sourcing Engine (IAASE) - Phase 1
 
-Phase 1 implements a Facebook Marketplace sniffer with two separate phases:
-- **Discovery**: extract listing cards from the feed (fast).
-- **Monitoring**: recheck saved listing URLs from the DB to capture changes (slower, more reliable than scrolling).
+Phase 1 implements a Facebook Marketplace sniffer with two jobs:
+- **Discovery**: extract listing cards from the feed, then (optionally) visit the detail pages for *new* items to capture `description`.
+- **Monitoring**: recheck saved listing URLs from the DB to capture changes (title/price/description/status).
 
 ## 1) Setup
 
@@ -176,8 +176,9 @@ Pacing controls (optional):
 - `SCRAPE_DELAY_MIN_MS`, `SCRAPE_DELAY_MAX_MS` for per-page jitter.
 - `SCRAPE_COOLDOWN_EVERY_N`, `SCRAPE_COOLDOWN_MIN_MS`, `SCRAPE_COOLDOWN_MAX_MS` for periodic cool-down.
 - `SCRAPE_GOTO_RETRY_COUNT` for navigation retries.
-- `SCRAPE_USE_NETWORK` to prefer network JSON over DOM.
+- `SCRAPE_USE_NETWORK` to prefer network JSON (GraphQL) over DOM when discovering cards.
 - `SCRAPE_NETWORK_SAVE_RAW` to save raw response JSON to `logs/network-<run_id>.json`.
+- `SCRAPE_NETWORK_DEBUG` to log GraphQL response URLs (debug).
 - `SCRAPE_LOG_PROGRESS` to print network/DOM selection info.
 - `SCRAPE_SCROLL_PAGES` to scroll the feed N times before extracting more cards.
 - `SCRAPE_SCROLL_DELAY_MS` delay between scrolls.
@@ -216,7 +217,8 @@ Each run writes:
 Register hourly run with 0-30 minute jitter (effective cadence ~1:00 to 1:30):
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/register_scraper_task.ps1 -TaskName "IAASE-Discovery" -IntervalMinutes 60 -MaxRandomDelayMinutes 30 -Mode discover
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/register_scraper_task.ps1 -TaskName "IAASE-Discovery" -IntervalMinutes 60 -MaxRandomDelayMinutes 30 -Mode discover -MaxCards 100
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/register_scraper_task.ps1 -TaskName "IAASE-Monitor" -IntervalMinutes 180 -MaxRandomDelayMinutes 30 -Mode monitor
 ```
 
 Run immediately for testing:
@@ -224,6 +226,7 @@ Run immediately for testing:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_scraper.ps1 -Mode discover -Headless
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_scraper.ps1 -Mode monitor -Headless
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_discover_and_monitor.ps1 -Headless -MaxCards 100
 ```
 
 Remove task:
@@ -241,6 +244,3 @@ Unregister-ScheduledTask -TaskName "IAASE-Discovery" -Confirm:$false
 - If session expires, rerun with `--bootstrap-login`.
 - If selectors break due to Facebook DOM changes, update extraction selectors in `scraper/sniffer_phase1.py`.
 - If login is stuck on loading, delete `.playwright_profile/facebook_personal` and run bootstrap again with Chrome channel.
-#   I p h o n e S c r a p e r F l i p p e r 
- 
- 

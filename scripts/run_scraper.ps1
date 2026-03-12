@@ -3,7 +3,7 @@ param(
   [string]$Engine = "playwright-extra",
   [ValidateSet("discover","monitor","both")]
   [string]$Mode = "discover",
-  [int]$MaxCards = 50,
+  [int]$MaxCards = 100,
   [int]$MaxRandomDelayMinutes = 30,
   [switch]$Headless
 )

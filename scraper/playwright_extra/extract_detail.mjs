@@ -1,5 +1,5 @@
 import { DETAIL_NOISE_RE, DETAIL_STOP_RE, LISTED_IN_RE, LOCATION_LINE_RE } from "./constants.mjs";
-import { cleanText, extractPrice, inferDescription, inferLocation, isPriceOnly } from "./utils.mjs";
+import { cleanText, extractBestPhpPriceRaw, extractPrice, inferDescription, inferLocation, isPriceOnly } from "./utils.mjs";
 
 export function looksLikeUnavailableListing(bodyText) {
   const body = String(bodyText || "").toLowerCase();
@@ -117,8 +117,8 @@ export function deriveDescriptionFromDetail({ bodyText, metaOgDescription, title
 
 export function derivePriceRawFromDetail({ bodyText, metaOgDescription, fallback }) {
   return (
-    extractPrice(metaOgDescription || "") ||
-    extractPrice(bodyText || "") ||
+    extractBestPhpPriceRaw(metaOgDescription || "") ||
+    extractBestPhpPriceRaw(bodyText || "") ||
     cleanText(fallback)
   );
 }
@@ -126,4 +126,3 @@ export function derivePriceRawFromDetail({ bodyText, metaOgDescription, fallback
 export function deriveLocationFromDetail({ bodyText, detailLocation, fallback }) {
   return cleanText(detailLocation) || inferLocation(bodyText || "") || cleanText(fallback);
 }
-

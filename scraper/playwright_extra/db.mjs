@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 
-import { cleanText, envInt, isWeakDescription } from "./utils.mjs";
+import { cleanText, envBool, envInt, isWeakDescription, normalizeLocationRaw } from "./utils.mjs";
 
 function createSupabaseClient() {
   const url = cleanText(process.env.SUPABASE_URL);
@@ -53,6 +53,8 @@ export async function persistToDatabase(rows, { log } = {}) {
 
   const retries = envInt("DB_RETRY_COUNT", 3);
   const baseDelayMs = envInt("DB_RETRY_BASE_MS", 1500);
+  const captureChanges = envBool("DB_LOG_CHANGES", false);
+  const changeLimit = Math.max(0, envInt("DB_LOG_CHANGE_LIMIT", 25));
 
   const supabase = createSupabaseClient();
   const listingIds = rows.map((r) => String(r.listing_id));
@@ -78,6 +80,8 @@ export async function persistToDatabase(rows, { log } = {}) {
 
   const upserts = [];
   const versions = [];
+  const changeSamples = [];
+  const changedFieldCounts = Object.create(null);
   let inserted = 0;
   let updated = 0;
   let unchanged = 0;
@@ -89,7 +93,7 @@ export async function persistToDatabase(rows, { log } = {}) {
 
     const nextTitle = row.title;
     let nextDescription = row.description;
-    let nextLocationRaw = row.location_raw;
+    let nextLocationRaw = normalizeLocationRaw(row.location_raw);
     let nextPriceRaw = row.price_raw;
     let nextPricePhp = row.price_php;
 
@@ -97,8 +101,9 @@ export async function persistToDatabase(rows, { log } = {}) {
       if (isWeakDescription(nextDescription) && !isWeakDescription(existing.description)) {
         nextDescription = existing.description;
       }
-      if (!cleanText(nextLocationRaw) && cleanText(existing.location_raw)) {
-        nextLocationRaw = existing.location_raw;
+      const prevLocation = normalizeLocationRaw(existing.location_raw);
+      if (!cleanText(nextLocationRaw) && cleanText(prevLocation)) {
+        nextLocationRaw = prevLocation;
       }
       if ((nextPricePhp == null || !Number.isFinite(nextPricePhp)) && existing.price_php != null) {
         nextPricePhp = existing.price_php;
@@ -130,7 +135,6 @@ export async function persistToDatabase(rows, { log } = {}) {
 
       if ((nextTitle || null) !== (existing.title || null)) changedFields.push("title");
       if ((nextDescription || null) !== (existing.description || null)) changedFields.push("description");
-      if ((nextLocationRaw || null) !== (existing.location_raw || null)) changedFields.push("location_raw");
 
       const prevPrice = existing.price_php;
       const currPrice = nextPricePhp;
@@ -145,8 +149,30 @@ export async function persistToDatabase(rows, { log } = {}) {
         changedFields.push("status");
       }
 
-      if (changedFields.length) updated += 1;
-      else unchanged += 1;
+      if (changedFields.length) {
+        updated += 1;
+        for (const f of changedFields) changedFieldCounts[f] = (changedFieldCounts[f] || 0) + 1;
+        if (captureChanges && changeSamples.length < changeLimit) {
+          changeSamples.push({
+            listing_id: listingId,
+            changed_fields: changedFields,
+            prev: {
+              title: existing.title || null,
+              price_php: existing.price_php ?? null,
+              status: existing.status || null,
+              description_len: cleanText(existing.description)?.length || 0
+            },
+            next: {
+              title: nextTitle || null,
+              price_php: nextPricePhp ?? null,
+              status: row.listing_status || "active",
+              description_len: cleanText(nextDescription)?.length || 0
+            }
+          });
+        }
+      } else {
+        unchanged += 1;
+      }
     }
 
     upserts.push(payload);
@@ -201,17 +227,180 @@ export async function persistToDatabase(rows, { log } = {}) {
   }
 
   const existing = updated + unchanged;
-  return { inserted, updated, unchanged, existing, versionsInserted };
+  return { inserted, updated, unchanged, existing, versionsInserted, changedFieldCounts, changeSamples };
+}
+
+function dedupeRowsByListingId(rows) {
+  const seen = new Set();
+  const out = [];
+  for (const row of rows || []) {
+    const listingId = cleanText(row?.listing_id);
+    if (!listingId) continue;
+    if (seen.has(listingId)) continue;
+    seen.add(listingId);
+    out.push(row);
+  }
+  return out;
+}
+
+export async function fetchExistingListingIds(listingIds, { log } = {}) {
+  const cleaned = Array.from(
+    new Set((listingIds || []).map((id) => cleanText(id)).filter(Boolean))
+  );
+  if (!cleaned.length) return new Set();
+
+  const retries = envInt("DB_RETRY_COUNT", 3);
+  const baseDelayMs = envInt("DB_RETRY_BASE_MS", 1500);
+  const supabase = createSupabaseClient();
+
+  const existingRes = await withRetry(
+    () => supabase.from("listings").select("listing_id").in("listing_id", cleaned),
+    { retries, baseDelayMs, log, label: "db_existing_ids_select" }
+  );
+  if (existingRes.error) {
+    throw new Error(`DB existing listings fetch failed: ${existingRes.error.message}`);
+  }
+  return new Set((existingRes.data || []).map((r) => String(r.listing_id)));
+}
+
+export async function persistDiscoveryInsertOnly(rows, { log } = {}) {
+  const input = dedupeRowsByListingId(rows);
+  if (!input.length) {
+    return { inserted: 0, updated: 0, unchanged: 0, existing: 0, versionsInserted: 0 };
+  }
+
+  const retries = envInt("DB_RETRY_COUNT", 3);
+  const baseDelayMs = envInt("DB_RETRY_BASE_MS", 1500);
+
+  const supabase = createSupabaseClient();
+  const listingIds = input.map((r) => String(r.listing_id));
+  const nowIso = new Date().toISOString();
+
+  const existingSet = await fetchExistingListingIds(listingIds, { log });
+  const toInsert = input.filter((r) => !existingSet.has(String(r.listing_id)));
+  if (!toInsert.length) {
+    return { inserted: 0, updated: 0, unchanged: 0, existing: input.length, versionsInserted: 0 };
+  }
+
+  const inserts = toInsert.map((row) => {
+    const scrapedAt = row.scraped_at || nowIso;
+    return {
+      listing_id: String(row.listing_id),
+      url: row.url,
+      title: row.title,
+      description: row.description,
+      location_raw: normalizeLocationRaw(row.location_raw),
+      price_raw: row.price_raw,
+      price_php: row.price_php,
+      status: row.listing_status || "active",
+      first_seen_at: scrapedAt,
+      last_seen_at: scrapedAt,
+      last_price_change_at: null,
+      created_at: nowIso,
+      updated_at: nowIso
+    };
+  });
+
+  const insertRes = await withRetry(
+    () =>
+      supabase
+        .from("listings")
+        .insert(inserts, { onConflict: "listing_id", ignoreDuplicates: true })
+        .select("id,listing_id"),
+    { retries, baseDelayMs, log, label: "db_listings_insert_discovery" }
+  );
+  if (insertRes.error) {
+    throw new Error(`DB listings insert failed: ${insertRes.error.message}`);
+  }
+
+  const insertedRows = insertRes.data || [];
+  const idByListingId = new Map();
+  for (const row of insertedRows) {
+    idByListingId.set(String(row.listing_id), Number(row.id));
+  }
+
+  const versions = [];
+  for (const row of toInsert) {
+    const numericId = idByListingId.get(String(row.listing_id));
+    if (!numericId) continue;
+    versions.push({
+      listing_id: numericId,
+      snapshot_at: nowIso,
+      price_raw: row.price_raw,
+      price_php: row.price_php,
+      status: row.listing_status || "active",
+      title: row.title,
+      description: row.description,
+      changed_fields: ["new_listing"]
+    });
+  }
+
+  let versionsInserted = 0;
+  if (versions.length) {
+    const versionsRes = await withRetry(() => supabase.from("listing_versions").insert(versions), {
+      retries,
+      baseDelayMs,
+      log,
+      label: "db_versions_insert_discovery"
+    });
+    if (versionsRes.error) {
+      throw new Error(`DB listing_versions insert failed: ${versionsRes.error.message}`);
+    }
+    versionsInserted = versions.length;
+  }
+
+  const inserted = insertedRows.length;
+  const existing = input.length - inserted;
+  return { inserted, updated: 0, unchanged: 0, existing, versionsInserted };
 }
 
 export async function persistToDatabaseBatched(rows, { phase, runId, log } = {}) {
+  const batchSize = Math.max(1, envInt("DB_BATCH_SIZE", 25));
+  const out = {
+    inserted: 0,
+    updated: 0,
+    unchanged: 0,
+    existing: 0,
+    versionsInserted: 0,
+    changedFieldCounts: Object.create(null),
+    changeSamples: []
+  };
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const batch = rows.slice(i, i + batchSize);
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await persistToDatabase(batch, { log });
+      out.inserted += res.inserted;
+      out.updated += res.updated;
+      out.unchanged += res.unchanged;
+      out.existing += res.existing;
+      out.versionsInserted += res.versionsInserted;
+      if (res.changedFieldCounts) {
+        for (const [k, v] of Object.entries(res.changedFieldCounts)) {
+          out.changedFieldCounts[k] = (out.changedFieldCounts[k] || 0) + (v || 0);
+        }
+      }
+      if (Array.isArray(res.changeSamples) && res.changeSamples.length) {
+        out.changeSamples.push(...res.changeSamples);
+      }
+    } catch (error) {
+      if (phase && runId) {
+        savePendingRows({ runId, phase, rows: rows.slice(i), error, log });
+      }
+      throw error;
+    }
+  }
+  return out;
+}
+
+export async function persistDiscoveryInsertOnlyBatched(rows, { phase, runId, log } = {}) {
   const batchSize = Math.max(1, envInt("DB_BATCH_SIZE", 25));
   const out = { inserted: 0, updated: 0, unchanged: 0, existing: 0, versionsInserted: 0 };
   for (let i = 0; i < rows.length; i += batchSize) {
     const batch = rows.slice(i, i + batchSize);
     try {
       // eslint-disable-next-line no-await-in-loop
-      const res = await persistToDatabase(batch, { log });
+      const res = await persistDiscoveryInsertOnly(batch, { log });
       out.inserted += res.inserted;
       out.updated += res.updated;
       out.unchanged += res.unchanged;
@@ -226,4 +415,3 @@ export async function persistToDatabaseBatched(rows, { phase, runId, log } = {})
   }
   return out;
 }
-
