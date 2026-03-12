@@ -1,6 +1,9 @@
 param(
   [string]$TaskName = "IAASE-Sniffer",
-  [string]$PythonExe = "python",
+  [string]$NodeExe = "node",
+  [string]$Engine = "playwright-extra",
+  [ValidateSet("discover","monitor","both")]
+  [string]$Mode = "discover",
   [int]$IntervalMinutes = 60,
   [int]$MaxRandomDelayMinutes = 30,
   [int]$MaxCards = 50
@@ -10,7 +13,7 @@ $ErrorActionPreference = "Stop"
 $scriptsDir = $PSScriptRoot
 $runnerPath = Join-Path $scriptsDir "run_scraper.ps1"
 
-$actionArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$runnerPath`" -PythonExe `"$PythonExe`" -MaxCards $MaxCards -MaxRandomDelayMinutes $MaxRandomDelayMinutes"
+$actionArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$runnerPath`" -NodeExe `"$NodeExe`" -Engine `"$Engine`" -Mode `"$Mode`" -MaxCards $MaxCards -MaxRandomDelayMinutes $MaxRandomDelayMinutes -Headless"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $actionArgs
 
 $startAt = (Get-Date).AddMinutes(5)

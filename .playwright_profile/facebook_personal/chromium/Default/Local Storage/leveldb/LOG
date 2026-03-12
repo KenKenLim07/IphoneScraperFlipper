@@ -1,15 +1,3 @@
-2026/03/10-12:54:31.007 2f3c Reusing MANIFEST C:\Users\josem\My-project\IphoneflipperScrapper\.playwright_profile\facebook_personal\chromium\Default\Local Storage\leveldb/MANIFEST-000001
-2026/03/10-12:54:31.013 2f3c Recovering log #8
-2026/03/10-12:54:31.018 2f3c Level-0 table #11: started
-2026/03/10-12:54:31.029 2f3c Level-0 table #11: 11478 bytes OK
-2026/03/10-12:54:31.029 2f3c Recovering log #11
-2026/03/10-12:54:31.033 2f3c Reusing old log C:\Users\josem\My-project\IphoneflipperScrapper\.playwright_profile\facebook_personal\chromium\Default\Local Storage\leveldb/000011.log 
-2026/03/10-12:54:31.038 2f3c Delete type=0 #8
-2026/03/10-12:54:31.039 4a0 Compacting 4@0 + 0@1 files
-2026/03/10-12:54:31.070 4a0 Generated table #12@0: 14 keys, 881 bytes
-2026/03/10-12:54:31.070 4a0 Compacted 4@0 + 0@1 files => 881 bytes
-2026/03/10-12:54:31.071 4a0 compacted to: files[ 0 1 0 0 0 0 0 ]
-2026/03/10-12:54:31.072 4a0 Delete type=2 #3
-2026/03/10-12:54:31.073 4a0 Delete type=2 #6
-2026/03/10-12:54:31.073 4a0 Delete type=2 #9
-2026/03/10-12:54:31.073 4a0 Delete type=2 #11
+2026/03/12-14:58:00.945 55d8 Reusing MANIFEST C:\Users\josem\My-project\IphoneflipperScrapper\.playwright_profile\facebook_personal\chromium\Default\Local Storage\leveldb/MANIFEST-000001
+2026/03/12-14:58:00.975 55d8 Recovering log #65
+2026/03/12-14:58:00.977 55d8 Reusing old log C:\Users\josem\My-project\IphoneflipperScrapper\.playwright_profile\facebook_personal\chromium\Default\Local Storage\leveldb/000065.log 

@@ -1,6 +1,8 @@
 # Iloilo iPhone Arbitrage & Automated Sourcing Engine (IAASE) - Phase 1
 
-Phase 1 implements a Facebook Marketplace sniffer that extracts visible listing cards and upserts raw records into Supabase.
+Phase 1 implements a Facebook Marketplace sniffer with two separate phases:
+- **Discovery**: extract listing cards from the feed (fast).
+- **Monitoring**: recheck saved listing URLs from the DB to capture changes (slower, more reliable than scrolling).
 
 ## 1) Setup
 
@@ -13,115 +15,60 @@ python -m playwright install chromium
 
 Copy `.env.example` to `.env` and set real values:
 
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
 - `FB_MARKETPLACE_ILOILO_URL` (must include `sortBy=creation_time_descend`)
 - `PLAYWRIGHT_PROFILE_DIR`
 - `PLAYWRIGHT_PROFILE_ISOLATE_BY_CHANNEL` (`true` recommended)
 - `PLAYWRIGHT_BROWSER_CHANNEL` (`chromium` for headless scheduled runs)
-- `PLAYWRIGHT_USE_STEALTH` (`false` recommended; enable only if stable in your environment)
+- `PLAYWRIGHT_EXTRA_USE_STEALTH` (`true` by default; disable if unstable in your environment)
 - `PLAYWRIGHT_HEADLESS` (`true` for scheduled scraping)
-- `PLAYWRIGHT_DETAIL_DESCRIPTION_ENABLED` (`true` to enrich from listing detail pages)
-- `PLAYWRIGHT_DETAIL_DESCRIPTION_MAX_PAGES` (`8` default)
-- `PLAYWRIGHT_WATCHLIST_RECHECK_LIMIT` (`8` old active/not_seen listings rechecked per run by URL)
 
-## 2) Supabase table
+## 2) Database schema (for monitoring & history)
 
-Run the schema update script:
+The scraper upserts into `listings` (current state) and appends to `listing_versions` on changes:
 
 ```sql
--- file: sql/phase1_description_and_run_logging.sql
-```
-
-If you need manual SQL, apply this:
-
-```sql
-create table if not exists public.iaase_raw_listings (
-  id bigserial primary key,
-  listing_id text not null unique,
-  url text not null,
-  title text,
-  description text,
-  location_raw text,
-  location_id bigint,
-  price_raw text,
-  listing_status text not null default 'active',
-  content_hash text,
-  first_seen_at timestamptz,
-  last_seen_at timestamptz,
-  last_seen_run_id uuid,
-  last_changed_at timestamptz,
-  sold_at timestamptz,
-  missing_run_count integer not null default 0,
-  is_active boolean not null default true,
-  scraped_at timestamptz not null,
-  run_id uuid,
-  source text not null,
-  query_url text not null,
-  created_at timestamptz not null default now()
+create table listings (
+  id                   bigserial primary key,
+  listing_id           text not null unique,
+  url                  text not null,
+  title                text,
+  description          text,
+  location_raw         text,
+  price_raw            text,
+  price_php            numeric(12,2),
+  status               text not null default 'active',
+  first_seen_at        timestamptz not null default now(),
+  last_seen_at         timestamptz not null default now(),
+  last_price_change_at timestamptz,
+  created_at           timestamptz not null default now(),
+  updated_at           timestamptz not null default now()
 );
 
-create table if not exists public.iaase_locations (
-  id bigserial primary key,
-  location_key text not null unique,
-  location_raw text not null,
-  barangay text,
-  municipality text,
-  province text,
-  region_code text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table if not exists public.iaase_scrape_runs (
-  run_id uuid primary key,
-  started_at timestamptz not null,
-  finished_at timestamptz not null,
-  status text not null check (status in ('success', 'failed')),
-  query_url text not null,
-  browser_channel text not null,
-  headless boolean not null default false,
-  use_stealth boolean not null default false,
-  dry_run boolean not null default false,
-  max_cards integer not null,
-  cards_seen integer not null default 0,
-  rows_extracted integer not null default 0,
-  rows_upserted integer not null default 0,
-  rows_failed integer not null default 0,
-  rows_enriched_description integer not null default 0,
-  rows_enriched_location integer not null default 0,
-  rows_detected_sold integer not null default 0,
-  rows_detected_unavailable integer not null default 0,
-  locations_upserted integer not null default 0,
-  rows_changed integer not null default 0,
-  versions_inserted integer not null default 0,
-  rows_missing_seen integer not null default 0,
-  rows_marked_not_seen integer not null default 0,
-  error_count integer not null default 0,
-  error_details jsonb not null default '[]'::jsonb
-);
-
-create table if not exists public.iaase_listing_versions (
-  id bigserial primary key,
-  listing_id text not null,
-  run_id uuid not null,
-  scraped_at timestamptz not null,
-  content_hash text not null,
-  listing_status text not null default 'active',
-  title text,
-  description text,
-  price_raw text,
-  location_raw text,
-  location_id bigint,
-  url text,
+create table listing_versions (
+  id            bigserial primary key,
+  listing_id    bigint not null references listings(id) on delete cascade,
+  snapshot_at   timestamptz not null default now(),
+  price_raw     text,
+  price_php     numeric(12,2),
+  status        text,
+  title         text,
+  description   text,
   changed_fields jsonb not null default '[]'::jsonb
 );
 ```
 
+- `listings` holds the **current view** of each Marketplace item.
+- `listing_versions` stores a **snapshot row** every time important fields change (price, status, title, description).
+
+Notes:
+- `listings` is always the latest known values per `listing_id`.
+- `listing_versions` grows over time (history); it is append-only.
+
 ## 3) Bootstrap login (one-time)
 
 ```bash
-python scraper/sniffer_phase1.py --bootstrap-login
+npm.cmd install
+npm.cmd run sniffer:playwright-extra -- --bootstrap-login --browser-channel chromium --no-headless
 ```
 
 What happens:
@@ -134,7 +81,7 @@ What happens:
 If Facebook gets stuck loading, force Chrome channel:
 
 ```bash
-python scraper/sniffer_phase1.py --bootstrap-login --browser-channel chrome
+npm.cmd run sniffer:playwright-extra -- --bootstrap-login --browser-channel chrome --no-headless
 ```
 
 Stealth note:
@@ -144,24 +91,6 @@ Stealth note:
 
 ## 4) Run scraper
 
-Dry run (no database writes):
-
-```bash
-python scraper/sniffer_phase1.py --dry-run --max-cards 50
-```
-
-Normal run (with Supabase upsert):
-
-```bash
-python scraper/sniffer_phase1.py --max-cards 50
-```
-
-Headless Chromium run:
-
-```bash
-python scraper/sniffer_phase1.py --max-cards 50 --browser-channel chromium --headless
-```
-
 Puppeteer (experimental A/B test path):
 
 ```bash
@@ -169,10 +98,58 @@ npm.cmd install
 npm.cmd run sniffer:puppeteer -- --dry-run --max-cards 20 --browser-channel chromium
 ```
 
+Playwright-extra combined (discovery + monitoring):
+
+```bash
+npm.cmd install
+npm.cmd run sniffer:playwright-extra -- --max-cards 20 --browser-channel chromium --headless
+```
+
+Split entrypoints (recommended for scheduling):
+
+```bash
+npm.cmd run sniffer:playwright-extra:discover -- --max-cards 20 --browser-channel chromium --headless
+npm.cmd run sniffer:playwright-extra:monitor -- --browser-channel chromium --headless
+```
+
 Puppeteer bootstrap login (same persistent profile/channel model):
 
 ```bash
 npm.cmd run sniffer:puppeteer -- --bootstrap-login --browser-channel chromium --no-headless
+```
+
+Playwright-extra bootstrap login:
+
+```bash
+npm.cmd run sniffer:playwright-extra -- --bootstrap-login --browser-channel chromium --no-headless
+```
+
+## 4.1) Post-run QA check (legacy / optional)
+
+```bash
+npm.cmd run qa
+```
+
+This prints the latest run summary and counts of listings missing `description` or `location_raw`.
+
+You can target a specific run and show a small change delta:
+
+```bash
+npm.cmd run qa -- --run-id <uuid> --limit 10
+```
+
+## 4.2) Backfill missing descriptions (legacy / optional)
+
+Backfill the latest listings missing descriptions (default 10):
+
+```bash
+npm.cmd run backfill -- --limit 10
+```
+
+Or target specific listing ids:
+
+```bash
+npm.cmd run backfill -- --listing-id 698856889982758 --listing-id 910402055047554
 ```
 
 Notes for Puppeteer mode:
@@ -184,81 +161,86 @@ Notes for Puppeteer mode:
 - Writes `iaase_raw_listings`, `iaase_listing_versions`, and `iaase_scrape_runs` (non-dry runs).
 - Reuses `PLAYWRIGHT_DETAIL_DESCRIPTION_MAX_PAGES` for detail-page description/location enrichment.
 
+Notes for Playwright-extra mode:
+- Uses `playwright-extra` + `puppeteer-extra-plugin-stealth`.
+- Reuses `PLAYWRIGHT_PROFILE_DIR` and `PLAYWRIGHT_PROFILE_ISOLATE_BY_CHANNEL`.
+- Reads `PLAYWRIGHT_EXTRA_USE_STEALTH` (default true).
+- Mirrors Puppeteer data writes and enrichment.
+
+Legacy Python runner:
+- `scraper/legacy/sniffer_phase1.py` is kept for reference/debugging.
+- Python modules are archived at `scraper/legacy/iaase_sniffer/`.
+- Current primary runs are Node entrypoints (`npm.cmd run sniffer`).
+
+Pacing controls (optional):
+- `SCRAPE_DELAY_MIN_MS`, `SCRAPE_DELAY_MAX_MS` for per-page jitter.
+- `SCRAPE_COOLDOWN_EVERY_N`, `SCRAPE_COOLDOWN_MIN_MS`, `SCRAPE_COOLDOWN_MAX_MS` for periodic cool-down.
+- `SCRAPE_GOTO_RETRY_COUNT` for navigation retries.
+- `SCRAPE_USE_NETWORK` to prefer network JSON over DOM.
+- `SCRAPE_NETWORK_SAVE_RAW` to save raw response JSON to `logs/network-<run_id>.json`.
+- `SCRAPE_LOG_PROGRESS` to print network/DOM selection info.
+- `SCRAPE_SCROLL_PAGES` to scroll the feed N times before extracting more cards.
+- `SCRAPE_SCROLL_DELAY_MS` delay between scrolls.
+
 ## 5) Output contract
 
-Each normalized row contains:
+Each discovered row contains:
 
 - `listing_id`
 - `url`
 - `title`
 - `description`
 - `location_raw`
-- `location_id` (fk to `iaase_locations`)
-- `listing_status` (`active`, `sold`, `unavailable`, `not_seen`)
-- `content_hash` (change fingerprint)
-- `first_seen_at`, `last_seen_at`, `last_changed_at`, `sold_at`
+- `listing_status` (`active`)
 - `price_raw`
+- `price_php` (numeric PHP price, cleaned from `price_raw`)
 - `scraped_at` (UTC ISO-8601)
 - `run_id` (UUID of current scrape run)
-- `source` (`facebook_marketplace`)
-- `query_url`
 
-Run summary prints:
+Run summary prints (combined mode):
 
 - `run_id`
 - `status`
 - `cards_seen`
 - `rows_extracted`
-- `rows_upserted`
-- `rows_failed`
-- `rows_enriched_description`
-- `rows_enriched_location`
-- `rows_detected_sold`
-- `rows_detected_unavailable`
-- `locations_upserted`
-- `rows_changed`
-- `versions_inserted`
-- `rows_missing_seen`
-- `rows_marked_not_seen`
-- `rows_watchlist_rechecked`
+- `inserted` / `skipped_existing`
+- `monitor_rechecked` / `monitor_versions`
 - `elapsed_seconds`
 
-Each non-dry run also inserts one row into `iaase_scrape_runs` with counts + errors.
-Each run also writes a local log file to `logs/`.
+Each run writes:
+- a local log file to `logs/`
+- a JSON export of discoveries to `logs/discovery-<run_id>.json`
 
 ## 6) Scheduling (Windows Task Scheduler)
 
 Register hourly run with 0-30 minute jitter (effective cadence ~1:00 to 1:30):
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/register_scraper_task.ps1 -TaskName "IAASE-Sniffer" -IntervalMinutes 60 -MaxRandomDelayMinutes 30
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/register_scraper_task.ps1 -TaskName "IAASE-Discovery" -IntervalMinutes 60 -MaxRandomDelayMinutes 30 -Mode discover
 ```
 
 Run immediately for testing:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_scraper.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_scraper.ps1 -Mode discover -Headless
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_scraper.ps1 -Mode monitor -Headless
 ```
 
 Remove task:
 
 ```powershell
-Unregister-ScheduledTask -TaskName "IAASE-Sniffer" -Confirm:$false
+Unregister-ScheduledTask -TaskName "IAASE-Discovery" -Confirm:$false
 ```
 
 ## Notes
 
-- Scope is current visible viewport only (no scrolling).
-- Each run has 2 passes:
-  - feed discovery pass (newest marketplace cards)
-  - watchlist recheck pass (old active/not_seen listings by direct URL)
-- Code is modularized under `scraper/iaase_sniffer/`:
-  - `config.py` (CLI/env)
-  - `extraction.py` (Playwright + parsing)
-  - `storage.py` (Supabase + state/history logic)
+- Discovery and monitoring can run together (combined mode) or as separate scheduled tasks.
+- Monitoring rechecks listing detail URLs from the DB (not by scrolling).
+- Playwright-extra code is modularized under `scraper/playwright_extra/`.
   - `runner.py` (orchestration)
 - If session expires, rerun with `--bootstrap-login`.
 - If selectors break due to Facebook DOM changes, update extraction selectors in `scraper/sniffer_phase1.py`.
 - If login is stuck on loading, delete `.playwright_profile/facebook_personal` and run bootstrap again with Chrome channel.
-#   I p h o n e S c r a p e r F l i p p e r  
+#   I p h o n e S c r a p e r F l i p p e r 
+ 
  

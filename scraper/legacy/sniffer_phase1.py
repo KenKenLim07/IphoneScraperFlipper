@@ -1,0 +1,1 @@
+#!/usr/bin/env python3"""IAASE Phase 1 entrypoint."""from __future__ import annotationsimport sysfrom iaase_sniffer.runner import mainif __name__ == "__main__":    sys.exit(main())

@@ -1,3 +1,7 @@
-2026/03/10-12:54:31.000 4a0 Reusing MANIFEST C:\Users\josem\My-project\IphoneflipperScrapper\.playwright_profile\facebook_personal\chromium\Default\Session Storage/MANIFEST-000001
-2026/03/10-12:54:31.013 4a0 Recovering log #4
-2026/03/10-12:54:31.024 4a0 Reusing old log C:\Users\josem\My-project\IphoneflipperScrapper\.playwright_profile\facebook_personal\chromium\Default\Session Storage/000004.log 
+2026/03/12-14:58:04.625 55d8 Reusing MANIFEST C:\Users\josem\My-project\IphoneflipperScrapper\.playwright_profile\facebook_personal\chromium\Default\Session Storage/MANIFEST-000001
+2026/03/12-14:58:04.626 55d8 Recovering log #4
+2026/03/12-14:58:04.628 55d8 Level-0 table #7: started
+2026/03/12-14:58:04.633 55d8 Level-0 table #7: 14679 bytes OK
+2026/03/12-14:58:04.633 55d8 Recovering log #7
+2026/03/12-14:58:04.633 55d8 Reusing old log C:\Users\josem\My-project\IphoneflipperScrapper\.playwright_profile\facebook_personal\chromium\Default\Session Storage/000007.log 
+2026/03/12-14:58:04.639 55d8 Delete type=0 #4

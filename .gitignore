@@ -32,3 +32,8 @@ coverage/
 .idea/
 .vscode/
 backend/celerybeat-schedule.db
+
+logs/
+.playwright_profile/
+.tmp/
+data/
