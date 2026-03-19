@@ -37,3 +37,4 @@ logs/
 .playwright_profile/
 .tmp/
 data/
+.playwright_profile/
