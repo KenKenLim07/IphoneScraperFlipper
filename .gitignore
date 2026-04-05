@@ -38,3 +38,12 @@ logs/
 .tmp/
 data/
 .playwright_profile/
+
+# Monorepo app artifacts
+scraper/logs/
+scraper/.playwright_profile/
+scraper/.tmp/
+scraper/data/
+
+# Local backups / migrated leftovers
+infra/legacy/

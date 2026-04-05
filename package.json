@@ -1,28 +1,12 @@
 {
-  "name": "iaase-puppeteer-probe",
-  "version": "0.1.0",
+  "name": "iaase-monorepo",
   "private": true,
-  "type": "module",
+  "version": "0.1.0",
   "scripts": {
-    "sniffer:puppeteer": "node scraper/legacy/sniffer_phase1_puppeteer.mjs",
-    "sniffer:playwright-extra": "node scraper/sniffer_phase1_playwright_extra.mjs",
-    "sniffer:playwright-extra:discover": "node scraper/sniffer_playwright_extra_discover.mjs",
-    "sniffer:playwright-extra:monitor": "node scraper/sniffer_playwright_extra_monitor.mjs",
-    "sniffer": "node scraper/sniffer.mjs",
-    "db:check": "node scripts/db_check.mjs",
-    "db:audit": "node scripts/db_audit_versions.mjs",
-    "db:versions": "node scripts/db_noisy_versions_report.mjs",
-    "env:audit": "node scripts/env_audit.mjs",
-    "qa": "node scraper/qa_check.mjs",
-    "backfill": "node scraper/backfill_missing.mjs"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.51.0",
-    "dotenv": "^16.4.7",
-    "playwright": "^1.52.0",
-    "playwright-extra": "^4.3.6",
-    "puppeteer-core": "^24.7.2",
-    "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2"
+    "scraper:discover": "npm --prefix scraper run -s sniffer:playwright-extra:discover --",
+    "scraper:monitor": "npm --prefix scraper run -s sniffer:playwright-extra:monitor --",
+    "web:dev": "npm --prefix web run dev",
+    "web:build": "npm --prefix web run build",
+    "web:start": "npm --prefix web run start"
   }
 }

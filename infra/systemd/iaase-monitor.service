@@ -1,0 +1,15 @@
+[Unit]
+Description=IAASE Facebook Marketplace - Monitor
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Desktop/Projects/IphoneflipperScrapper/scraper
+ExecStart=/bin/bash -lc "%h/Desktop/Projects/IphoneflipperScrapper/scraper/scripts/run_monitor.sh"
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+
+[Install]
+WantedBy=default.target
