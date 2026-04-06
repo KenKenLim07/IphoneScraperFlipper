@@ -201,38 +201,111 @@ export function extractBestPhpPriceRaw(text) {
 export function inferHeaderPriceRawFromBodyText(bodyText) {
   const raw = String(bodyText || "");
   if (!raw) return null;
-  const lines = raw
+  const linesAll = raw
     .split("\n")
     .map((l) => cleanText(l))
-    .filter(Boolean)
-    .slice(0, 200);
+    .filter(Boolean);
 
-  // Most common: "Listed ... ago in <Location>"
-  // Some variants split the "in <Location>" to another line; don't require both on the same line.
-  const listedIdx = lines.findIndex((l) => /\blisted\b/i.test(l));
-  if (listedIdx >= 0) {
-    for (let i = listedIdx - 1; i >= Math.max(0, listedIdx - 16); i -= 1) {
-      const p = extractPrice(lines[i]);
-      if (p) return p;
+  const findInWindow = (lines) => {
+    // Most common: "Listed ... ago" (sometimes includes "in <Location>", sometimes not)
+    const listedIdx = lines.findIndex((l) => /\blisted\b/i.test(l));
+    if (listedIdx >= 0) {
+      for (let i = listedIdx - 1; i >= Math.max(0, listedIdx - 20); i -= 1) {
+        const p = extractPrice(lines[i]);
+        if (p) return p;
+      }
     }
-  }
 
-  // Fallback: "Details" often appears immediately below the header block.
-  const detailsIdx = lines.findIndex((l) => /^(details|detail)$/i.test(l));
-  if (detailsIdx >= 0) {
-    for (let i = detailsIdx - 1; i >= Math.max(0, detailsIdx - 24); i -= 1) {
-      const p = extractPrice(lines[i]);
-      if (p) return p;
+    // Fallback: "Details" often appears immediately below the header block.
+    const detailsIdx = lines.findIndex((l) => /^(details|detail)$/i.test(l));
+    if (detailsIdx >= 0) {
+      for (let i = detailsIdx - 1; i >= Math.max(0, detailsIdx - 28); i -= 1) {
+        const p = extractPrice(lines[i]);
+        if (p) return p;
+      }
     }
-  }
 
-  // Fallback: first price line near the top of the page.
-  for (let i = 0; i < Math.min(50, lines.length); i += 1) {
-    const p = extractPrice(lines[i]);
+    return null;
+  };
+
+  // Facebook sometimes renders the "Listed ..." line far from the beginning of `document.body.innerText`,
+  // so scan BOTH the head and the tail.
+  const head = linesAll.slice(0, 260);
+  const tail = linesAll.slice(-260);
+
+  const best = findInWindow(head) || findInWindow(tail);
+  if (best) return best;
+
+  // Fallback: first price line near the very top of the page (still better than "max price").
+  for (let i = 0; i < Math.min(80, head.length); i += 1) {
+    const p = extractPrice(head[i]);
     if (p) return p;
   }
 
   return null;
+}
+
+export function inferHeaderPriceRaw(bodyText, aboveFoldTexts = []) {
+  // Prefer above-the-fold nodes (tends to include the header block), then fall back to whole body.
+  const fold = Array.isArray(aboveFoldTexts) ? aboveFoldTexts.map((t) => cleanText(t)).filter(Boolean) : [];
+  const foldJoined = fold.length ? fold.join("\n") : "";
+  return inferHeaderPriceRawFromBodyText(foldJoined) || inferHeaderPriceRawFromBodyText(bodyText);
+}
+
+export function inferHeaderLocationRawFromBodyText(bodyText) {
+  const raw = String(bodyText || "");
+  if (!raw) return null;
+  const linesAll = raw
+    .split("\n")
+    .map((l) => cleanText(l))
+    .filter(Boolean);
+
+  const scan = (lines) => {
+    // Direct "Listed ... in <Location>" line.
+    for (const line of lines) {
+      const m = LISTED_IN_RE.exec(line);
+      if (m && cleanText(m[1])) return normalizeLocationRaw(m[1]);
+    }
+
+    // If "Listed ..." exists, prefer nearby location-like lines.
+    const listedIdx = lines.findIndex((l) => /\blisted\b/i.test(l));
+    if (listedIdx >= 0) {
+      for (let i = listedIdx; i < Math.min(lines.length, listedIdx + 8); i += 1) {
+        const m = LISTED_IN_RE.exec(lines[i]);
+        if (m && cleanText(m[1])) return normalizeLocationRaw(m[1]);
+        if (LOCATION_LINE_RE.test(lines[i])) return normalizeLocationRaw(lines[i]);
+      }
+      for (let i = listedIdx - 1; i >= Math.max(0, listedIdx - 16); i -= 1) {
+        const m = LISTED_IN_RE.exec(lines[i]);
+        if (m && cleanText(m[1])) return normalizeLocationRaw(m[1]);
+        if (LOCATION_LINE_RE.test(lines[i])) return normalizeLocationRaw(lines[i]);
+      }
+    }
+
+    // Fallback: first location-looking line near the top.
+    for (const line of lines.slice(0, 120)) {
+      if (LOCATION_LINE_RE.test(line)) return normalizeLocationRaw(line);
+    }
+
+    return null;
+  };
+
+  const head = linesAll.slice(0, 260);
+  const tail = linesAll.slice(-260);
+  return scan(head) || scan(tail) || null;
+}
+
+export function inferHeaderLocationRaw(bodyText, aboveFoldTexts = [], listedLine = null) {
+  const listed = cleanText(listedLine);
+  if (listed) {
+    const m = LISTED_IN_RE.exec(listed);
+    if (m && cleanText(m[1])) return normalizeLocationRaw(m[1]);
+    if (LOCATION_LINE_RE.test(listed)) return normalizeLocationRaw(listed);
+  }
+
+  const fold = Array.isArray(aboveFoldTexts) ? aboveFoldTexts.map((t) => cleanText(t)).filter(Boolean) : [];
+  const foldJoined = fold.length ? fold.join("\n") : "";
+  return inferHeaderLocationRawFromBodyText(foldJoined) || inferHeaderLocationRawFromBodyText(bodyText);
 }
 
 export function parsePhpPrice(value) {

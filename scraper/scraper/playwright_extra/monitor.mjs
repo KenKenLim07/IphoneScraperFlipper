@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { cleanOgTitle, deriveLocationFromDetail, derivePriceRawFromDetail, extractDetailFieldsFromPage, looksLikeSoldListing, looksLikeUnavailableListing } from "./extract_detail.mjs";
 import { looksLikeGenericMarketplaceShell, looksLikeLoginOrBlock, safePageTitle } from "./fb_checks.mjs";
-import { cleanText, envBool, gotoWithRetry, gotoWithRetryWithReferer, inferDescription, inferHeaderPriceRawFromBodyText, inferPostedAtFromBodyText, looksLikeBuyerWantedPost, parsePhpPrice, randomBetween, sanitizeTitle, sleep } from "./utils.mjs";
+import { cleanText, envBool, gotoWithRetry, gotoWithRetryWithReferer, inferDescription, inferHeaderLocationRaw, inferHeaderPriceRaw, inferPostedAtFromBodyText, looksLikeBuyerWantedPost, parsePhpPrice, randomBetween, sanitizeTitle, sleep } from "./utils.mjs";
 
 function createSupabaseClient() {
   const url = cleanText(process.env.SUPABASE_URL);
@@ -120,9 +120,7 @@ async function recheckOne(page, candidate, opts, index, total) {
 
     // Pass 2: prefer the primary above-the-fold price (most stable), then the header price.
     const primaryPriceRaw = cleanText(details.primaryPriceRaw);
-    const headerPriceRaw = inferHeaderPriceRawFromBodyText(
-      `${(details.aboveFoldTexts || []).join("\n")}\n${bodyText}\n${details.listedLine || ""}`
-    );
+    const headerPriceRaw = inferHeaderPriceRaw(bodyText, details.aboveFoldTexts);
     derivedPriceRaw = primaryPriceRaw || headerPriceRaw || derivedPriceRaw;
 
     // Meta price is sometimes stale or polluted; only use it if we still don't have any price.
@@ -142,11 +140,30 @@ async function recheckOne(page, candidate, opts, index, total) {
       opts.log?.(`[INFO] ${label}_price listing_id=${listingId} source=${src} price_raw=${derivedPriceRaw || "n/a"}`);
     }
 
-    const derivedLocationRaw = deriveLocationFromDetail({
-      bodyText,
-      detailLocation: details.detailLocation,
-      fallback: candidate.location_raw
-    });
+    // Location can get polluted by "Similar items" blocks; only update it if we can read it from the header area.
+    const headerLocationRaw = inferHeaderLocationRaw(bodyText, details.aboveFoldTexts, details.listedLine);
+    let derivedLocationRaw = null;
+    let locationSrc = "keep";
+    if (headerLocationRaw) {
+      derivedLocationRaw = headerLocationRaw;
+      locationSrc = "header";
+    } else if (cleanText(candidate.location_raw)) {
+      derivedLocationRaw = cleanText(candidate.location_raw);
+      locationSrc = "keep";
+    } else {
+      derivedLocationRaw = deriveLocationFromDetail({
+        bodyText,
+        detailLocation: details.detailLocation,
+        fallback: candidate.location_raw
+      });
+      locationSrc = cleanText(details.detailLocation) ? "detail" : derivedLocationRaw ? "text" : "none";
+    }
+
+    if (opts.logEnabled) {
+      opts.log?.(
+        `[INFO] ${label}_loc listing_id=${listingId} source=${locationSrc} location_raw=${derivedLocationRaw || "n/a"}`
+      );
+    }
 
     const detailDescription = cleanText(details.detailDescription);
     const fallbackDescription = inferDescription(bodyText, derivedTitle, derivedPriceRaw);
