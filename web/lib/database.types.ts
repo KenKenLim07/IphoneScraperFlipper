@@ -14,6 +14,109 @@ export type Database = {
   }
   public: {
     Tables: {
+      deal_metrics: {
+        Row: {
+          asking_price_php: number | null
+          below_market_pct: number | null
+          comp_p25: number | null
+          comp_p50: number | null
+          comp_p75: number | null
+          comp_region_code: string | null
+          comp_sample_size: number
+          computed_at: string
+          confidence: string
+          deal_score: string
+          est_profit_php: number | null
+          listing_id: string
+          reasons: Json
+        }
+        Insert: {
+          asking_price_php?: number | null
+          below_market_pct?: number | null
+          comp_p25?: number | null
+          comp_p50?: number | null
+          comp_p75?: number | null
+          comp_region_code?: string | null
+          comp_sample_size?: number
+          computed_at?: string
+          confidence?: string
+          deal_score?: string
+          est_profit_php?: number | null
+          listing_id: string
+          reasons?: Json
+        }
+        Update: {
+          asking_price_php?: number | null
+          below_market_pct?: number | null
+          comp_p25?: number | null
+          comp_p50?: number | null
+          comp_p75?: number | null
+          comp_region_code?: string | null
+          comp_sample_size?: number
+          computed_at?: string
+          confidence?: string
+          deal_score?: string
+          est_profit_php?: number | null
+          listing_id?: string
+          reasons?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_metrics_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: true
+            referencedRelation: "listings"
+            referencedColumns: ["listing_id"]
+          },
+        ]
+      }
+      listing_features: {
+        Row: {
+          battery_health: number | null
+          condition_text: string | null
+          listing_id: string
+          model_family: string
+          openline: boolean | null
+          region_code: string | null
+          risk_flags: Json
+          storage_gb: number | null
+          updated_at: string
+          variant: string
+        }
+        Insert: {
+          battery_health?: number | null
+          condition_text?: string | null
+          listing_id: string
+          model_family: string
+          openline?: boolean | null
+          region_code?: string | null
+          risk_flags?: Json
+          storage_gb?: number | null
+          updated_at?: string
+          variant: string
+        }
+        Update: {
+          battery_health?: number | null
+          condition_text?: string | null
+          listing_id?: string
+          model_family?: string
+          openline?: boolean | null
+          region_code?: string | null
+          risk_flags?: Json
+          storage_gb?: number | null
+          updated_at?: string
+          variant?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "listing_features_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: true
+            referencedRelation: "listings"
+            referencedColumns: ["listing_id"]
+          },
+        ]
+      }
       listing_versions: {
         Row: {
           changed_fields: Json
@@ -63,6 +166,7 @@ export type Database = {
       }
       listings: {
         Row: {
+          condition_raw: string | null
           created_at: string
           description: string | null
           first_seen_at: string
@@ -80,6 +184,7 @@ export type Database = {
           url: string
         }
         Insert: {
+          condition_raw?: string | null
           created_at?: string
           description?: string | null
           first_seen_at?: string
@@ -97,6 +202,7 @@ export type Database = {
           url: string
         }
         Update: {
+          condition_raw?: string | null
           created_at?: string
           description?: string | null
           first_seen_at?: string

@@ -166,6 +166,7 @@ async function recheckOne(page, candidate, opts, index, total) {
     }
 
     const detailDescription = cleanText(details.detailDescription);
+    const detailCondition = cleanText(details.detailCondition);
     const fallbackDescription = inferDescription(bodyText, derivedTitle, derivedPriceRaw);
     let derivedDescription = detailDescription || cleanText(fallbackDescription) || cleanText(candidate.description);
 
@@ -197,6 +198,7 @@ async function recheckOne(page, candidate, opts, index, total) {
       url,
       title: derivedTitle,
       description: derivedDescription,
+      condition_raw: detailCondition,
       location_raw: derivedLocationRaw,
       price_raw: derivedPriceRaw,
       price_php: parsePhpPrice(derivedPriceRaw),

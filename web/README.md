@@ -6,6 +6,14 @@ Next.js (App Router) dashboard for Marketplace listings:
 - `/login` shared-password login
 - `/logout` clears session
 
+## Deal scoring
+
+If `deal_metrics` is present in the DB, the public list will show:
+- Deal score (A/B/C only)
+- % below market (vs comps median)
+- Confidence
+- Estimated profit (simple conservative estimate)
+
 ## Local dev
 
 ```bash

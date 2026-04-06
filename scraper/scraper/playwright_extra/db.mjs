@@ -65,7 +65,7 @@ export async function persistToDatabase(rows, { log } = {}) {
       supabase
         .from("listings")
         .select(
-          "id,listing_id,title,description,location_raw,price_raw,price_php,status,posted_at,first_seen_at,last_seen_at,last_price_change_at"
+          "id,listing_id,title,description,condition_raw,location_raw,price_raw,price_php,status,posted_at,first_seen_at,last_seen_at,last_price_change_at"
         )
         .in("listing_id", listingIds),
     { retries, baseDelayMs, log, label: "db_existing_select" }
@@ -93,6 +93,7 @@ export async function persistToDatabase(rows, { log } = {}) {
 
     const nextTitle = row.title;
     let nextDescription = row.description;
+    let nextConditionRaw = cleanText(row.condition_raw);
     let nextLocationRaw = normalizeLocationRaw(row.location_raw);
     let nextPriceRaw = row.price_raw;
     let nextPricePhp = row.price_php;
@@ -100,6 +101,9 @@ export async function persistToDatabase(rows, { log } = {}) {
     if (existing) {
       if (isWeakDescription(nextDescription) && !isWeakDescription(existing.description)) {
         nextDescription = existing.description;
+      }
+      if (!cleanText(nextConditionRaw) && cleanText(existing.condition_raw)) {
+        nextConditionRaw = cleanText(existing.condition_raw);
       }
       const prevLocation = normalizeLocationRaw(existing.location_raw);
       if (!cleanText(nextLocationRaw) && cleanText(prevLocation)) {
@@ -118,6 +122,7 @@ export async function persistToDatabase(rows, { log } = {}) {
       url: row.url,
       title: nextTitle,
       description: nextDescription,
+      condition_raw: nextConditionRaw,
       location_raw: nextLocationRaw,
       price_raw: nextPriceRaw,
       price_php: nextPricePhp,
@@ -199,7 +204,13 @@ export async function persistToDatabase(rows, { log } = {}) {
     { retries, baseDelayMs, log, label: "db_listings_upsert" }
   );
   if (upsertRes.error) {
-    throw new Error(`DB listings upsert failed: ${upsertRes.error.message}`);
+    const msg = String(upsertRes.error.message || "");
+    if (/column .*condition_raw.* does not exist/i.test(msg)) {
+      throw new Error(
+        `DB listings upsert failed: ${msg} (hint: run scraper/sql/add_condition_raw.sql in Supabase)`
+      );
+    }
+    throw new Error(`DB listings upsert failed: ${msg}`);
   }
 
   if (versions.length && upsertRes.data) {
@@ -291,6 +302,7 @@ export async function persistDiscoveryInsertOnly(rows, { log } = {}) {
       url: row.url,
       title: row.title,
       description: row.description,
+      condition_raw: cleanText(row.condition_raw),
       location_raw: normalizeLocationRaw(row.location_raw),
       price_raw: row.price_raw,
       price_php: row.price_php,
@@ -313,7 +325,13 @@ export async function persistDiscoveryInsertOnly(rows, { log } = {}) {
     { retries, baseDelayMs, log, label: "db_listings_insert_discovery" }
   );
   if (insertRes.error) {
-    throw new Error(`DB listings insert failed: ${insertRes.error.message}`);
+    const msg = String(insertRes.error.message || "");
+    if (/column .*condition_raw.* does not exist/i.test(msg)) {
+      throw new Error(
+        `DB listings insert failed: ${msg} (hint: run scraper/sql/add_condition_raw.sql in Supabase)`
+      );
+    }
+    throw new Error(`DB listings insert failed: ${msg}`);
   }
 
   const insertedRows = insertRes.data || [];

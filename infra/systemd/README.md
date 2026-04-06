@@ -56,3 +56,7 @@ The scraper also writes JSON artifacts under `logs/` (for example `logs/discover
 Notes:
 - Units assume the scraper working directory is `~/Desktop/Projects/IphoneflipperScrapper/scraper` (update if different).
 - Logs, profile, and other runtime folders live under `scraper/` when running via these units.
+
+## Deal intelligence (optional)
+
+If you've enabled the deal engine (`scraper/scripts/compute_deals.mjs`), the default units run it automatically after each discovery/monitor run via `ExecStartPost=`.

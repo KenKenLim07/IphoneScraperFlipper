@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchPrivateListing } from "@/lib/data";
-import { formatDateTime, formatPhp, formatRelativeAge, stripEmojiFromTitle } from "@/lib/format";
+import { formatDateTime, formatPct, formatPhp, formatRelativeAge, stripEmojiFromTitle } from "@/lib/format";
+import { parseRiskFlags, triStateFromFlags } from "@/lib/riskFlags";
 
 function statusBadge(status: string) {
   const s = String(status || "active").toLowerCase();
@@ -17,12 +18,65 @@ function statusBadge(status: string) {
   return <Badge variant="secondary">active</Badge>;
 }
 
+function dealScoreBadge(score: unknown) {
+  const s = String(score || "").toUpperCase();
+  if (s === "A") return <Badge className="bg-emerald-600 text-white">A</Badge>;
+  if (s === "B") return <Badge className="bg-sky-600 text-white">B</Badge>;
+  if (s === "C") return <Badge className="bg-amber-500 text-white">C</Badge>;
+  if (s === "D") return <Badge variant="secondary">D</Badge>;
+  return <span className="text-muted-foreground">—</span>;
+}
+
+function confidenceBadge(value: unknown) {
+  const v = String(value || "").toLowerCase();
+  if (v === "high") return <Badge className="bg-emerald-600 text-white">high</Badge>;
+  if (v === "med") return <Badge className="bg-sky-600 text-white">med</Badge>;
+  if (v === "low") return <Badge variant="secondary">low</Badge>;
+  return <span className="text-muted-foreground">—</span>;
+}
+
+function buildWarnings(listing: any): string[] {
+  const flags = parseRiskFlags(listing?.risk_flags);
+  const warnings: string[] = [];
+
+  if (flags.icloud_lock) warnings.push("iCloud / activation / reset risk");
+  if (flags.wanted_post) warnings.push("Looks like buyer/wanted post (LF/WTB/BUYING)");
+  if (flags.face_id_not_working) warnings.push("Face ID not working");
+  if (flags.screen_issue) warnings.push("Screen issue detected");
+  if (flags.camera_issue) warnings.push("Camera issue detected");
+  if (flags.lcd_replaced) warnings.push("LCD replaced");
+  if (flags.network_locked) warnings.push("Network-locked (Globe/Smart/SIM lock)");
+  if (flags.trutone_missing) warnings.push("TrueTone missing");
+  if (flags.back_glass_replaced) warnings.push("Back glass replaced");
+  if (flags.no_description) warnings.push("No/short description (unknown condition)");
+
+  return warnings;
+}
+
 export default async function ItemPage({ params }: { params: Promise<{ listing_id: string }> }) {
   const { listing_id } = await params;
   const res = await fetchPrivateListing(String(listing_id));
   if (!res) notFound();
 
   const { listing, versions } = res;
+  const warnings = buildWarnings(listing);
+
+  const score = String(listing.deal_score || "").toUpperCase();
+  const confidence = String(listing.confidence || "").toLowerCase();
+  const profit = typeof listing.est_profit_php === "number" ? listing.est_profit_php : null;
+
+  const flags = parseRiskFlags(listing.risk_flags);
+  const hardBlocked = flags.icloud_lock || flags.wanted_post || score === "NA";
+  const faceIdTri = triStateFromFlags(flags, "face_id_working", "face_id_not_working");
+  const trutoneTri = triStateFromFlags(flags, "trutone_working", "trutone_missing");
+
+  const goodForFlipping =
+    !hardBlocked &&
+    (score === "A" || score === "B" || score === "C") &&
+    profit != null &&
+    Number.isFinite(profit) &&
+    profit > 0 &&
+    confidence !== "low";
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -38,6 +92,11 @@ export default async function ItemPage({ params }: { params: Promise<{ listing_i
             <span>{listing.location_raw || "—"}</span>
             <span>•</span>
             {statusBadge(listing.status)}
+            <span>•</span>
+            <span className="flex items-center gap-2">
+              <span className="text-muted-foreground">score</span>
+              {dealScoreBadge(listing.deal_score)}
+            </span>
             <span>•</span>
             <span title={formatDateTime(listing.posted_at || listing.first_seen_at)}>
               listed {formatRelativeAge(listing.posted_at || listing.first_seen_at)}
@@ -77,7 +136,140 @@ export default async function ItemPage({ params }: { params: Promise<{ listing_i
           </CardContent>
         </Card>
 
-        <Card>
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Deal</CardTitle>
+              <CardDescription>Comps-based estimate (best-effort).</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 text-xs sm:text-sm">
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <div className="text-[11px] font-medium text-muted-foreground">Final evaluation</div>
+                <div className="mt-1 flex items-center gap-2">
+                  {goodForFlipping ? (
+                    <>
+                      <Badge className="bg-emerald-600 text-white">✅ Good deal (for flipping)</Badge>
+                      <span className="text-xs text-muted-foreground">Score + profit + confidence look OK.</span>
+                    </>
+                  ) : (
+                    <>
+                      <Badge variant="secondary">❌ Not good (for flipping)</Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {hardBlocked
+                          ? "Hard risk flags detected."
+                          : profit != null && profit <= 0
+                            ? "Profit estimate is not positive."
+                            : confidence === "low"
+                              ? "Low confidence comps."
+                              : "Needs manual review."}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Score</span>
+                <span className="flex items-center gap-2">{dealScoreBadge(listing.deal_score)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Below market</span>
+                <span className="font-mono">
+                  {listing.below_market_pct != null ? `${formatPct(listing.below_market_pct)} below` : "—"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Confidence</span>
+                {confidenceBadge(listing.confidence)}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Est. profit</span>
+                <span className="font-mono">{formatPhp(listing.est_profit_php ?? null)}</span>
+              </div>
+
+              {warnings.length ? (
+                <div className="pt-2">
+                  <div className="text-[11px] text-muted-foreground">Warnings</div>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                    {warnings.slice(0, 8).map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="pt-2 text-[11px] text-muted-foreground">Comps</div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Sample size</span>
+                <span className="font-mono">{listing.comp_sample_size ?? "—"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">p25 / p50 / p75</span>
+                <span className="font-mono">
+                  {listing.comp_p25 != null ? formatPhp(listing.comp_p25) : "—"} /{" "}
+                  {listing.comp_p50 != null ? formatPhp(listing.comp_p50) : "—"} /{" "}
+                  {listing.comp_p75 != null ? formatPhp(listing.comp_p75) : "—"}
+                </span>
+              </div>
+
+              {Array.isArray(listing.reasons) && listing.reasons.length ? (
+                <div className="pt-2">
+                  <div className="text-[11px] text-muted-foreground">Why</div>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                    {listing.reasons.slice(0, 8).map((r) => (
+                      <li key={r}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="pt-2 text-[11px] text-muted-foreground">Specs</div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Model</span>
+                <span className="font-mono">{[listing.model_family, listing.variant].filter(Boolean).join(" ") || "—"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Storage</span>
+                <span className="font-mono">{listing.storage_gb != null ? `${listing.storage_gb}GB` : "—"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Battery health</span>
+                <span className="font-mono">{listing.battery_health != null ? `${listing.battery_health}%` : "—"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Face ID</span>
+                <span className="font-mono">{faceIdTri}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">TrueTone</span>
+                <span className="font-mono">{trutoneTri}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">LCD</span>
+                <span className="font-mono">{flags.lcd_replaced ? "replaced" : "—"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Network</span>
+                <span className="font-mono">{flags.network_locked ? "locked" : "—"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Openline</span>
+                <span className="font-mono">
+                  {typeof listing.openline === "boolean" ? (listing.openline ? "yes" : "no") : "—"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Condition</span>
+                <span className="font-mono">{listing.condition_text || "—"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Region</span>
+                <span className="font-mono">{listing.region_code || "—"}</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
           <CardHeader>
             <CardTitle>Metadata</CardTitle>
             <CardDescription>Last known scrape timestamps.</CardDescription>
@@ -103,7 +295,8 @@ export default async function ItemPage({ params }: { params: Promise<{ listing_i
               <span className="font-mono">{formatDateTime(listing.last_price_change_at)}</span>
             </div>
           </CardContent>
-        </Card>
+          </Card>
+        </div>
       </div>
 
       <Card>

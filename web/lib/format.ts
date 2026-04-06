@@ -36,6 +36,11 @@ export function formatRelativeAge(value: string | null | undefined, nowMs: numbe
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" });
 }
 
+export function formatPct(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${Math.round(value * 100)}%`;
+}
+
 export function stripEmojiFromTitle(value: string | null | undefined): string {
   const raw = (value || "").toString();
   if (!raw.trim()) return "Untitled listing";

@@ -1,12 +1,15 @@
 import Link from "next/link";
 
+import { CameraOff, Check, FileWarning, Lock, Monitor, Wrench, X } from "lucide-react";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchPublicListings } from "@/lib/data";
-import { formatDateTime, formatPhp, formatRelativeAge, stripEmojiFromTitle } from "@/lib/format";
+import { formatDateTime, formatPct, formatPhp, formatRelativeAge } from "@/lib/format";
+import { parseRiskFlags } from "@/lib/riskFlags";
 import type { PublicListing } from "@/lib/types";
 
 function asString(v: string | string[] | undefined): string {
@@ -18,6 +21,83 @@ function statusBadge(status: string) {
   if (s === "sold") return <Badge className="bg-amber-500 text-white">sold</Badge>;
   if (s === "unavailable") return <Badge className="bg-slate-600 text-white">unavailable</Badge>;
   return <Badge variant="secondary">active</Badge>;
+}
+
+function dealScoreBadge(score: unknown) {
+  const s = String(score || "").toUpperCase();
+  if (s === "A") return <Badge className="bg-emerald-600 text-white">A</Badge>;
+  if (s === "B") return <Badge className="bg-sky-600 text-white">B</Badge>;
+  if (s === "C") return <Badge className="bg-amber-500 text-white">C</Badge>;
+  return null;
+}
+
+function confidenceBadge(value: unknown) {
+  const v = String(value || "").toLowerCase();
+  if (v === "high") return <Badge className="bg-emerald-600 text-white">high</Badge>;
+  if (v === "med") return <Badge className="bg-sky-600 text-white">med</Badge>;
+  if (v === "low") return <Badge variant="secondary">low</Badge>;
+  return <span className="text-muted-foreground">—</span>;
+}
+
+function showDeal(row: PublicListing) {
+  const s = String(row.deal_score || "").toUpperCase();
+  return s === "A" || s === "B" || s === "C";
+}
+
+type SignalChip = { label: string; className?: string };
+
+function buildSignalChips(riskFlags: unknown): SignalChip[] {
+  const flags = parseRiskFlags(riskFlags);
+  const chips: SignalChip[] = [];
+
+  if (flags.no_description) chips.push({ label: "Desc:short", className: "bg-amber-500 text-white" });
+  if (flags.face_id_not_working) chips.push({ label: "FaceID:no", className: "bg-rose-600 text-white" });
+  else if (flags.face_id_working) chips.push({ label: "FaceID:yes", className: "bg-emerald-600 text-white" });
+
+  if (flags.trutone_missing) chips.push({ label: "TT:no", className: "bg-rose-600 text-white" });
+  else if (flags.trutone_working) chips.push({ label: "TT:yes", className: "bg-emerald-600 text-white" });
+
+  if (flags.lcd_replaced) chips.push({ label: "LCD:replaced", className: "bg-amber-500 text-white" });
+  if (flags.network_locked) chips.push({ label: "Lock:locked", className: "bg-slate-700 text-white" });
+  if (flags.camera_issue) chips.push({ label: "Cam:issue", className: "bg-amber-500 text-white" });
+  if (flags.screen_issue) chips.push({ label: "Scr:issue", className: "bg-amber-500 text-white" });
+
+  return chips;
+}
+
+function renderSignalChips(riskFlags: unknown, mode: "dash" | "hide") {
+  const chips = buildSignalChips(riskFlags);
+  if (!chips.length) return mode === "dash" ? <span className="text-muted-foreground">—</span> : null;
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {chips.map((c) => (
+        <Badge
+          key={c.label}
+          title={c.label.replace(":", " ")}
+          className={`gap-1 ${c.className || ""}`}
+        >
+          {c.label === "Desc:short" ? <FileWarning className="h-3 w-3" aria-hidden /> : null}
+          {c.label === "FaceID:yes" ? <Check className="h-3 w-3" aria-hidden /> : null}
+          {c.label === "FaceID:no" ? <X className="h-3 w-3" aria-hidden /> : null}
+          {c.label === "TT:yes" ? <Check className="h-3 w-3" aria-hidden /> : null}
+          {c.label === "TT:no" ? <X className="h-3 w-3" aria-hidden /> : null}
+          {c.label === "LCD:replaced" ? <Wrench className="h-3 w-3" aria-hidden /> : null}
+          {c.label === "Lock:locked" ? <Lock className="h-3 w-3" aria-hidden /> : null}
+          {c.label === "Cam:issue" ? <CameraOff className="h-3 w-3" aria-hidden /> : null}
+          {c.label === "Scr:issue" ? <Monitor className="h-3 w-3" aria-hidden /> : null}
+          <span>
+            {c.label.startsWith("Desc") ? "Desc" : null}
+            {c.label.startsWith("FaceID") ? "FaceID" : null}
+            {c.label.startsWith("TT") ? "TT" : null}
+            {c.label.startsWith("LCD") ? "LCD" : null}
+            {c.label.startsWith("Lock") ? "Lock" : null}
+            {c.label.startsWith("Cam") ? "Cam" : null}
+            {c.label.startsWith("Scr") ? "Scr" : null}
+          </span>
+        </Badge>
+      ))}
+    </div>
+  );
 }
 
 function buildHref(params: Record<string, string>, overrides: Partial<Record<string, string>>) {
@@ -76,7 +156,7 @@ export default async function Home({
           Updated at {updatedAt ? formatDateTime(new Date(updatedAt).toISOString()) : "—"}
         </p>
         <p className="text-sm text-muted-foreground">
-          Browse recent iPhone listings. Details and seller link are gated behind login.
+          Browse recent iPhone listings. Deal score is public; detail page and seller link are gated behind login.
         </p>
       </div>
 
@@ -153,6 +233,18 @@ export default async function Home({
             <>
               <div className="space-y-3 sm:hidden">
                 {data.items.map((row: PublicListing) => (
+                  (() => {
+                    const dealVisible = showDeal(row);
+                    const score = dealVisible ? dealScoreBadge(row.deal_score) : null;
+                    const below = dealVisible ? row.below_market_pct : null;
+                    const conf = dealVisible ? row.confidence : null;
+                    const profit = dealVisible ? row.est_profit_php : null;
+                    const signals = renderSignalChips(row.risk_flags, "hide");
+                    const bh =
+                      typeof row.battery_health === "number" && Number.isFinite(row.battery_health)
+                        ? Math.round(row.battery_health)
+                        : null;
+                    return (
                   <Link
                     key={row.listing_id}
                     href={`/item/${encodeURIComponent(row.listing_id)}`}
@@ -160,14 +252,39 @@ export default async function Home({
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium leading-snug">{stripEmojiFromTitle(row.title)}</div>
+                        <div className="text-sm font-medium leading-snug">{row.public_title}</div>
                         <div className="mt-1 text-xs text-muted-foreground">
                           {row.location_raw || "—"}
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          {signals ? signals : null}
+                          <span className="text-[11px] text-muted-foreground">
+                            BH <span className="font-mono text-foreground">{bh != null ? `${bh}%` : "—"}</span>
+                          </span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                          {score ? (
+                            <>
+                              <span className="text-foreground">Score</span>
+                              {score}
+                              <span>•</span>
+                              <span>{below != null ? `${formatPct(below)} below` : "—"}</span>
+                              <span>•</span>
+                              <span>{String(conf || "—")}</span>
+                            </>
+                          ) : (
+                            <span>Deal score —</span>
+                          )}
                         </div>
                       </div>
                       <div className="shrink-0 text-right">
                         <div className="font-mono text-sm">{formatPhp(row.price_php)}</div>
                         <div className="mt-1 flex justify-end">{statusBadge(row.status)}</div>
+                        {score ? (
+                          <div className="mt-2 text-[11px] text-muted-foreground">
+                            profit <span className="font-mono text-foreground">{formatPhp(profit)}</span>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                     <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
@@ -178,6 +295,8 @@ export default async function Home({
                       </span>
                     </div>
                   </Link>
+                    );
+                  })()
                 ))}
               </div>
 
@@ -185,22 +304,35 @@ export default async function Home({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Title</TableHead>
+                      <TableHead>Model</TableHead>
                       <TableHead className="whitespace-nowrap">Price</TableHead>
                       <TableHead className="whitespace-nowrap">Location</TableHead>
+                      <TableHead className="whitespace-nowrap">BH</TableHead>
+                      <TableHead className="whitespace-nowrap">Signals</TableHead>
+                      <TableHead className="whitespace-nowrap">Score</TableHead>
+                      <TableHead className="whitespace-nowrap">Below</TableHead>
+                      <TableHead className="whitespace-nowrap">Conf</TableHead>
+                      <TableHead className="whitespace-nowrap">Profit</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="whitespace-nowrap">Posted</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {data.items.map((row: PublicListing) => (
+                      (() => {
+                        const dealVisible = showDeal(row);
+                        const score = dealVisible ? dealScoreBadge(row.deal_score) : null;
+                        const below = dealVisible ? row.below_market_pct : null;
+                        const conf = dealVisible ? row.confidence : null;
+                        const profit = dealVisible ? row.est_profit_php : null;
+                        return (
                       <TableRow key={row.listing_id}>
                         <TableCell className="min-w-[320px]">
                           <Link
                           href={`/item/${encodeURIComponent(row.listing_id)}`}
                           className="font-medium hover:underline hover:underline-offset-4"
                         >
-                          {stripEmojiFromTitle(row.title)}
+                          {row.public_title}
                         </Link>
                         <div className="mt-1 font-mono text-[11px] text-muted-foreground">
                           id={row.listing_id}
@@ -208,6 +340,18 @@ export default async function Home({
                         </TableCell>
                         <TableCell className="whitespace-nowrap font-mono">{formatPhp(row.price_php)}</TableCell>
                         <TableCell className="whitespace-nowrap">{row.location_raw || "—"}</TableCell>
+                        <TableCell className="whitespace-nowrap font-mono">
+                          {typeof row.battery_health === "number" && Number.isFinite(row.battery_health)
+                            ? `${Math.round(row.battery_health)}%`
+                            : "—"}
+                        </TableCell>
+                        <TableCell className="min-w-[140px]">{renderSignalChips(row.risk_flags, "dash")}</TableCell>
+                        <TableCell className="whitespace-nowrap">{score || <span className="text-muted-foreground">—</span>}</TableCell>
+                        <TableCell className="whitespace-nowrap font-mono">
+                          {below != null ? `${formatPct(below)} below` : "—"}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">{dealVisible ? confidenceBadge(conf) : <span className="text-muted-foreground">—</span>}</TableCell>
+                        <TableCell className="whitespace-nowrap font-mono">{dealVisible ? formatPhp(profit) : "—"}</TableCell>
                         <TableCell>{statusBadge(row.status)}</TableCell>
                         <TableCell className="whitespace-nowrap">
                           <span title={formatDateTime(row.posted_at || row.first_seen_at)}>
@@ -216,6 +360,8 @@ export default async function Home({
                           {!row.posted_at ? <span className="ml-2 text-[11px] text-muted-foreground">(est.)</span> : null}
                         </TableCell>
                       </TableRow>
+                        );
+                      })()
                     ))}
                   </TableBody>
                 </Table>

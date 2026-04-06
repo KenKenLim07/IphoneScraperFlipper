@@ -13,6 +13,57 @@ function parseIntParam(value: string | null, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function publicTitleFromFeatures(feat: any, fallbackTitle: unknown): string {
+  const modelFamily = typeof feat?.model_family === "string" ? feat.model_family : "";
+  const variant = typeof feat?.variant === "string" ? feat.variant : "";
+  const storageGb =
+    typeof feat?.storage_gb === "number"
+      ? feat.storage_gb
+      : typeof feat?.storage_gb === "string"
+        ? Number(feat.storage_gb)
+        : null;
+
+  const formatModel = (mf: string) => {
+    const s = mf.toLowerCase();
+    if (s === "iphone_xr") return "iPhone XR";
+    if (s === "iphone_xs") return "iPhone XS";
+    if (s === "iphone_x") return "iPhone X";
+    if (s === "iphone_se") return "iPhone SE";
+    if (s === "iphone_se_2") return "iPhone SE (2020)";
+    if (s === "iphone_se_3") return "iPhone SE (2022)";
+    const m = /^iphone_(\d{1,2})$/.exec(s);
+    if (m) return `iPhone ${m[1]}`;
+    return "";
+  };
+
+  const formatVariant = (v: string) => {
+    const s = v.toLowerCase();
+    if (s === "pro_max") return "Pro Max";
+    if (s === "pro") return "Pro";
+    if (s === "plus") return "Plus";
+    if (s === "mini") return "Mini";
+    if (s === "max") return "Max";
+    return "";
+  };
+
+  const model = formatModel(modelFamily);
+  const varText = formatVariant(variant);
+  const storage = storageGb != null && Number.isFinite(storageGb) ? `${Math.round(storageGb)}GB` : "";
+  const joined = [model, varText, storage].filter(Boolean).join(" ");
+  if (joined) return joined;
+
+  // Fallback: extract a minimal model from the original title without leaking extra phrases/prices.
+  const t = cleanText(fallbackTitle) || "";
+  const lowered = t.toLowerCase();
+  const n = /\biphone\s*(\d{1,2})\b/i.exec(lowered);
+  if (n) return `iPhone ${n[1]}`;
+  if (/\biphone\s*xr\b/i.test(lowered)) return "iPhone XR";
+  if (/\biphone\s*xs\b/i.test(lowered)) return "iPhone XS";
+  if (/\biphone\s*x\b/i.test(lowered)) return "iPhone X";
+  if (/\biphone\s*se\b/i.test(lowered)) return "iPhone SE";
+  return "iPhone";
+}
+
 export type PublicListingsQuery = {
   query?: string | null;
   min?: number | null;
@@ -38,7 +89,9 @@ export async function fetchPublicListings(input: PublicListingsQuery) {
   const supabase = supabaseAdmin();
   let query = supabase
     .from("listings")
-    .select("listing_id,title,price_php,price_raw,location_raw,status,posted_at,first_seen_at,last_seen_at,last_price_change_at")
+    .select(
+      "listing_id,title,price_php,price_raw,location_raw,status,posted_at,first_seen_at,last_seen_at,last_price_change_at,deal:deal_metrics(deal_score,below_market_pct,confidence,est_profit_php),feat:listing_features(model_family,variant,storage_gb,battery_health,openline,risk_flags)"
+    )
     .order("posted_at", { ascending: false, nullsFirst: false })
     .order("first_seen_at", { ascending: false, nullsFirst: false })
     .order("listing_id", { ascending: false, nullsFirst: false });
@@ -58,13 +111,36 @@ export async function fetchPublicListings(input: PublicListingsQuery) {
 
   const res = await query.range(from, to);
   if (res.error) throw new Error(res.error.message);
-  const rows = (res.data || []) as unknown as PublicListing[];
+  const rows = (res.data || []) as unknown as any[];
   const hasMore = rows.length > pageSize;
+  const items: PublicListing[] = rows.slice(0, pageSize).map((r) => {
+    const deal = Array.isArray(r?.deal) ? r.deal[0] : r?.deal;
+    const feat = Array.isArray(r?.feat) ? r.feat[0] : r?.feat;
+    return {
+      listing_id: String(r.listing_id),
+      public_title: publicTitleFromFeatures(feat, r.title),
+      price_php: r.price_php ?? null,
+      price_raw: r.price_raw ?? null,
+      location_raw: r.location_raw ?? null,
+      status: r.status ?? "active",
+      posted_at: r.posted_at ?? null,
+      first_seen_at: r.first_seen_at ?? null,
+      last_seen_at: r.last_seen_at ?? null,
+      last_price_change_at: r.last_price_change_at ?? null,
+      battery_health: feat?.battery_health ?? null,
+      openline: feat?.openline ?? null,
+      deal_score: deal?.deal_score ?? null,
+      below_market_pct: deal?.below_market_pct ?? null,
+      confidence: deal?.confidence ?? null,
+      est_profit_php: deal?.est_profit_php ?? null,
+      risk_flags: feat?.risk_flags ?? null
+    };
+  });
   return {
     page,
     pageSize,
     hasMore,
-    items: rows.slice(0, pageSize)
+    items
   };
 }
 
@@ -73,14 +149,54 @@ export async function fetchPrivateListing(listingId: string) {
   const listingRes = await supabase
     .from("listings")
     .select(
-      "id,listing_id,url,title,description,location_raw,price_raw,price_php,status,first_seen_at,last_seen_at,last_price_change_at,updated_at"
+      "id,listing_id,url,title,description,location_raw,price_raw,price_php,status,posted_at,first_seen_at,last_seen_at,last_price_change_at,updated_at,deal:deal_metrics(deal_score,below_market_pct,confidence,est_profit_php,comp_sample_size,comp_p25,comp_p50,comp_p75,reasons),feat:listing_features(model_family,variant,storage_gb,battery_health,openline,condition_text,region_code,risk_flags)"
     )
     .eq("listing_id", listingId)
     .limit(1)
     .maybeSingle();
 
   if (listingRes.error) throw new Error(listingRes.error.message);
-  const listing = listingRes.data as unknown as PrivateListing | null;
+  const raw = listingRes.data as unknown as any | null;
+  const deal = raw ? (Array.isArray(raw.deal) ? raw.deal[0] : raw.deal) : null;
+  const feat = raw ? (Array.isArray(raw.feat) ? raw.feat[0] : raw.feat) : null;
+  const listing: PrivateListing | null = raw
+    ? {
+        id: raw.id,
+        listing_id: String(raw.listing_id),
+        url: String(raw.url),
+        public_title: publicTitleFromFeatures(feat, raw.title),
+        title: raw.title ?? null,
+        description: raw.description ?? null,
+        location_raw: raw.location_raw ?? null,
+        price_raw: raw.price_raw ?? null,
+        price_php: raw.price_php ?? null,
+        status: raw.status ?? "active",
+        posted_at: raw.posted_at ?? null,
+        first_seen_at: raw.first_seen_at ?? null,
+        last_seen_at: raw.last_seen_at ?? null,
+        last_price_change_at: raw.last_price_change_at ?? null,
+        updated_at: raw.updated_at ?? null,
+
+        deal_score: deal?.deal_score ?? null,
+        below_market_pct: deal?.below_market_pct ?? null,
+        confidence: deal?.confidence ?? null,
+        est_profit_php: deal?.est_profit_php ?? null,
+        comp_sample_size: deal?.comp_sample_size ?? null,
+        comp_p25: deal?.comp_p25 ?? null,
+        comp_p50: deal?.comp_p50 ?? null,
+        comp_p75: deal?.comp_p75 ?? null,
+        reasons: Array.isArray(deal?.reasons) ? deal.reasons.map((x: unknown) => String(x)) : null,
+
+        model_family: feat?.model_family ?? null,
+        variant: feat?.variant ?? null,
+        storage_gb: feat?.storage_gb ?? null,
+        battery_health: feat?.battery_health ?? null,
+        openline: feat?.openline ?? null,
+        condition_text: feat?.condition_text ?? null,
+        region_code: feat?.region_code ?? null,
+        risk_flags: feat?.risk_flags ?? null
+      }
+    : null;
   if (!listing) return null;
 
   const versionsRes = await supabase

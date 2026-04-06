@@ -35,11 +35,17 @@ export function loadDotenv() {
   const overrideEnv = (process.env.DOTENV_PATH || "").trim();
 
   // Intentionally DO NOT load `process.cwd()/.env` because running from repo root would pick up the wrong file.
-  const candidates = uniq([overrideEnv, scraperEnv])
+  // Load base first, then override (last write wins).
+  const candidates = uniq([scraperEnv, overrideEnv])
     .map(existingFile)
     .filter(Boolean);
 
   for (const envPath of candidates) {
-    dotenv.config({ path: envPath });
+    dotenv.config({ path: envPath, override: true });
+    if ((process.env.DOTENV_DEBUG || "").trim()) {
+      // Avoid printing any env values; just show which file was loaded.
+      // eslint-disable-next-line no-console
+      console.log(`[INFO] dotenv_loaded path=${envPath}`);
+    }
   }
 }

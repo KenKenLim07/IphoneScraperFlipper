@@ -32,6 +32,19 @@ npm run sniffer:playwright-extra:discover -- --max-cards 50 --browser-channel ch
 npm run sniffer:playwright-extra:monitor  -- --limit 50 --browser-channel chromium --headless
 ```
 
+### Deal intelligence (comps + score)
+
+1) Run the SQL migration in Supabase:
+
+- `scraper/sql/add_deal_intelligence_tables.sql`
+
+2) Compute deal metrics:
+
+```bash
+cd scraper
+npm run deals:compute
+```
+
 ## Web dashboard
 
 See `web/README.md`.

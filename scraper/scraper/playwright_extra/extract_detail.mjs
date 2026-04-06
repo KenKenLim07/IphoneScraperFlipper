@@ -84,11 +84,25 @@ export async function extractDetailFieldsFromPage(page, record) {
     let detailsIndex = lowered.findIndex((t) => t === "details" || t === "detail");
     if (detailsIndex < 0) detailsIndex = 0;
     const listedLine = texts.find((t) => /\blisted\b/i.test(t)) || null;
+
+    let detailCondition = null;
+    const conditionIdx = lowered.findIndex((t) => t === "condition");
+    if (conditionIdx >= 0) {
+      for (let i = conditionIdx + 1; i < Math.min(lowered.length, conditionIdx + 6); i += 1) {
+        const v = texts[i];
+        if (!v) continue;
+        if (String(v).toLowerCase() === "condition") continue;
+        detailCondition = v;
+        break;
+      }
+    }
+
     return {
       allTexts: texts,
       detailTexts: texts.slice(detailsIndex, detailsIndex + 80),
       listedLine,
-      aboveFoldTexts: aboveFoldTexts.slice(0, 240)
+      aboveFoldTexts: aboveFoldTexts.slice(0, 240),
+      detailCondition
     };
   });
 
@@ -96,6 +110,7 @@ export async function extractDetailFieldsFromPage(page, record) {
   const detailTexts = Array.isArray(result?.detailTexts) ? result.detailTexts : [];
   const listedLine = cleanText(result?.listedLine);
   const aboveFoldTexts = Array.isArray(result?.aboveFoldTexts) ? result.aboveFoldTexts : [];
+  const detailCondition = cleanText(result?.detailCondition);
   const primaryPriceRaw = pickPrimaryPriceRaw(aboveFoldTexts);
 
   let detailLocation = null;
@@ -141,7 +156,7 @@ export async function extractDetailFieldsFromPage(page, record) {
   }
 
   const detailDescription = lines.length ? normalizeDetailDescription(lines.join(" | ")) : null;
-  return { detailDescription, detailLocation, listedLine, aboveFoldTexts, primaryPriceRaw };
+  return { detailDescription, detailLocation, listedLine, aboveFoldTexts, primaryPriceRaw, detailCondition };
 }
 
 export function deriveDescriptionFromDetail({ bodyText, metaOgDescription, title, priceRaw, detailDescription }) {
