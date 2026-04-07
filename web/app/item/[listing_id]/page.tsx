@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ExternalLink } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, XCircle } from "lucide-react";
 
+import { ListingSignalPills } from "@/components/listing-signal-pills";
 import { PriceHistoryChart } from "@/components/price-history-chart";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,7 @@ function buildWarnings(listing: any): string[] {
   if (flags.network_locked) warnings.push("Network-locked (Globe/Smart/SIM lock)");
   if (flags.trutone_missing) warnings.push("TrueTone missing");
   if (flags.back_glass_replaced) warnings.push("Back glass replaced");
+  if (flags.battery_replaced) warnings.push("Battery replaced");
   if (flags.no_description) warnings.push("No/short description (unknown condition)");
 
   return warnings;
@@ -148,12 +150,18 @@ export default async function ItemPage({ params }: { params: Promise<{ listing_i
                 <div className="mt-1 flex items-center gap-2">
                   {goodForFlipping ? (
                     <>
-                      <Badge className="bg-emerald-600 text-white">✅ Good deal (for flipping)</Badge>
+                      <Badge className="gap-1 bg-emerald-600 text-white">
+                        <CheckCircle2 className="h-4 w-4" aria-hidden />
+                        <span>Good deal (for flipping)</span>
+                      </Badge>
                       <span className="text-xs text-muted-foreground">Score + profit + confidence look OK.</span>
                     </>
                   ) : (
                     <>
-                      <Badge variant="secondary">❌ Not good (for flipping)</Badge>
+                      <Badge variant="secondary" className="gap-1">
+                        <XCircle className="h-4 w-4" aria-hidden />
+                        <span>Not good (for flipping)</span>
+                      </Badge>
                       <span className="text-xs text-muted-foreground">
                         {hardBlocked
                           ? "Hard risk flags detected."
@@ -189,12 +197,17 @@ export default async function ItemPage({ params }: { params: Promise<{ listing_i
 
               {warnings.length ? (
                 <div className="pt-2">
-                  <div className="text-[11px] text-muted-foreground">Warnings</div>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
-                    {warnings.slice(0, 8).map((w) => (
-                      <li key={w}>{w}</li>
-                    ))}
-                  </ul>
+                  <div className="rounded-lg border border-rose-200/70 bg-rose-50/70 p-3 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
+                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide">
+                      <AlertTriangle className="h-4 w-4" aria-hidden />
+                      <span>Warnings</span>
+                    </div>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
+                      {warnings.slice(0, 8).map((w) => (
+                        <li key={w}>{w}</li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               ) : null}
 
@@ -222,6 +235,16 @@ export default async function ItemPage({ params }: { params: Promise<{ listing_i
                   </ul>
                 </div>
               ) : null}
+
+              <div className="pt-2">
+                <div className="text-[11px] text-muted-foreground">Signals</div>
+                <ListingSignalPills
+                  className="mt-2"
+                  riskFlags={listing.risk_flags}
+                  batteryHealth={listing.battery_health}
+                  openline={listing.openline}
+                />
+              </div>
 
               <div className="pt-2 text-[11px] text-muted-foreground">Specs</div>
               <div className="flex items-center justify-between gap-2">
@@ -260,7 +283,7 @@ export default async function ItemPage({ params }: { params: Promise<{ listing_i
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">Condition</span>
-                <span className="font-mono">{listing.condition_text || "—"}</span>
+                <span className="font-mono">{listing.condition_raw || "—"}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">Region</span>

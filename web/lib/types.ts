@@ -42,7 +42,7 @@ export type PrivateListing = PublicListing & {
   storage_gb?: number | null;
   battery_health?: number | null;
   openline?: boolean | null;
-  condition_text?: string | null;
+  condition_raw?: string | null;
   region_code?: string | null;
   risk_flags?: unknown;
 };

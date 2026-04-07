@@ -1,0 +1,48 @@
+name: Deals Compute
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Every hour
+    - cron: "0 * * * *"
+
+concurrency:
+  group: deals-compute
+  cancel-in-progress: false
+
+jobs:
+  compute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      PUPPETEER_SKIP_DOWNLOAD: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: scraper/package-lock.json
+
+      - name: Install scraper deps
+        working-directory: scraper
+        run: npm ci
+
+      - name: Run deals compute (with retry + logs)
+        working-directory: scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DEALS_MAX_LISTINGS: ${{ secrets.DEALS_MAX_LISTINGS }}
+        run: |
+          echo "Starting deals compute at $(date)"
+          for i in 1 2 3; do
+            npm run deals:compute && break
+            echo "Retry $i failed..."
+            sleep 10
+          done
+          echo "Finished at $(date)"

@@ -149,7 +149,7 @@ export async function fetchPrivateListing(listingId: string) {
   const listingRes = await supabase
     .from("listings")
     .select(
-      "id,listing_id,url,title,description,location_raw,price_raw,price_php,status,posted_at,first_seen_at,last_seen_at,last_price_change_at,updated_at,deal:deal_metrics(deal_score,below_market_pct,confidence,est_profit_php,comp_sample_size,comp_p25,comp_p50,comp_p75,reasons),feat:listing_features(model_family,variant,storage_gb,battery_health,openline,condition_text,region_code,risk_flags)"
+      "id,listing_id,url,title,description,location_raw,condition_raw,price_raw,price_php,status,posted_at,first_seen_at,last_seen_at,last_price_change_at,updated_at,deal:deal_metrics(deal_score,below_market_pct,confidence,est_profit_php,comp_sample_size,comp_p25,comp_p50,comp_p75,reasons),feat:listing_features(model_family,variant,storage_gb,battery_health,openline,region_code,risk_flags)"
     )
     .eq("listing_id", listingId)
     .limit(1)
@@ -192,7 +192,7 @@ export async function fetchPrivateListing(listingId: string) {
         storage_gb: feat?.storage_gb ?? null,
         battery_health: feat?.battery_health ?? null,
         openline: feat?.openline ?? null,
-        condition_text: feat?.condition_text ?? null,
+        condition_raw: raw.condition_raw ?? null,
         region_code: feat?.region_code ?? null,
         risk_flags: feat?.risk_flags ?? null
       }

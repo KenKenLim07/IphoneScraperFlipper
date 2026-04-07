@@ -60,5 +60,28 @@
   body {
     @apply bg-background text-foreground antialiased;
   }
-}
 
+  /* Data-dense dashboard scrollbar (Ops-center style). */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--border)) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--border));
+    border-radius: 9999px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(var(--muted-foreground));
+  }
+}

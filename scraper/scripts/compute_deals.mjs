@@ -44,7 +44,7 @@ function parseModelFamily(text) {
   const num = /\biphone\s*(\d{1,2})\b/i.exec(s);
   if (num) {
     const n = Number.parseInt(num[1], 10);
-    if (Number.isFinite(n) && n >= 7 && n <= 16) return `iphone_${n}`;
+    if (Number.isFinite(n) && n >= 7 && n <= 20) return `iphone_${n}`;
   }
 
   // iPhone XR / XS / X (order matters: XS before X).
@@ -89,7 +89,10 @@ function parseBatteryHealth(text) {
   if (!raw) return null;
 
   // Normalize weird whitespace (NBSP etc.) and reduce noise.
-  const s = raw.replace(/[\u00A0\u2007\u202F]/g, " ");
+  const s = raw
+    .replace(/[\u00A0\u2007\u202F]/g, " ")
+    // Help match "100battery health" / "100batt" by inserting a space between digits and letters.
+    .replace(/(\d)([A-Za-z])/g, "$1 $2");
 
   // Capture battery health only when it's explicitly labeled (avoid false matches like "256 batthealth").
   // Supported patterns:
@@ -138,23 +141,12 @@ function parseBatteryHealth(text) {
 function parseOpenline(text) {
   const s = String(text || "").toLowerCase();
   if (!s) return null;
-  if (/(open\s*line|openline|unlocked|factory\s+unlocked|any\s*sim|anysim)/i.test(s)) return true;
-  return null;
-}
-
-function parseConditionText(text) {
-  const s = String(text || "");
-  const patterns = [
-    /\bused\s*-\s*like\s*new\b/i,
-    /\bused\s*-\s*good\b/i,
-    /\bused\s*-\s*fair\b/i,
-    /\blike\s*new\b/i,
-    /\bbrand\s*new\b/i,
-    /\bnew\b/i
-  ];
-  for (const re of patterns) {
-    const m = re.exec(s);
-    if (m) return cleanText(m[0]);
+  if (
+    /(open\s*line|openline|unlocked|factory\s+unlocked|any\s*sim|anysim)/i.test(s) ||
+    /\bno\s+sim\s*(?:restriction|restrictions|lock|locked)\b/i.test(s) ||
+    /\bno\s+sim\s*restrict\w*\b/i.test(s)
+  ) {
+    return true;
   }
   return null;
 }
@@ -162,12 +154,22 @@ function parseConditionText(text) {
 function hasIcloudRisk(text) {
   const s = String(text || "").toLowerCase();
   if (!s) return false;
+
+  const explicitlyClean =
+    /\b(clean|clear)\s+icloud\b/i.test(s) ||
+    /\bicloud\s+(clean|clear|ready|ok)\b/i.test(s) ||
+    /\bno\s+icloud\b/i.test(s) ||
+    /\bicloud\s+ready\s+to\s+(sign\s*in|use)\b/i.test(s);
+
   if (/\bnot\s+safe\s+to\s+reset\b/i.test(s)) return true;
   if (/\bactivation\s+lock\b/i.test(s)) return true;
-  if (/\bicloud\b/i.test(s)) return true;
-  if (/\bbypass\b/i.test(s)) return true;
-  // "locked" is ambiguous; still treat as risky in v1.
-  if (/\blocked\b/i.test(s)) return true;
+  if (/\b(icloud)\b[^\n]{0,24}\b(lock|locked)\b/i.test(s)) return true;
+  if (/\b(lock|locked)\b[^\n]{0,24}\b(icloud)\b/i.test(s)) return true;
+  if (/\b(icloud)\b[^\n]{0,24}\b(bypass)\b/i.test(s)) return true;
+  if (/\b(bypass)\b[^\n]{0,24}\b(icloud)\b/i.test(s)) return true;
+  if (/\b(remove|tanggal|delete)\b[^\n]{0,24}\b(icloud)\b/i.test(s)) return true;
+
+  if (explicitlyClean) return false;
   return false;
 }
 
@@ -226,36 +228,60 @@ function detectIssues(text) {
   }
 
   const faceIdNo = anyMatch(raw, [
+    // Matches: "no face id", "wala faceid", "wla face id"
     /\b(no|wala|wla)\s+face\s*id\b/i,
-    /\bface\s*id\b[^\n]{0,40}\b(not\s*work|not\s*working|issue|broken|defect|dead|disable|disabled)\b/i,
-    /\bfaceid\b[^\n]{0,40}\b(not\s*work|not\s*working|issue|broken|defect|dead)\b/i,
-    /\b(di|indi)\s+ga\s+work\s+face\s*id\b/i,
+    
+    // Matches: "face id not working", "faceid issue", "broken", "guba", "wala ga work"
+    /\bface\s*id\b[^\n]{0,40}\b(not\s*work(?:ing)?|issue|broken|defect|dead|disable|disabled|guba|wala\s+ga\s*work|wala\s+ga?gana)\b/i,
+    /\bfaceid\b[^\n]{0,40}\b(not\s*work(?:ing)?|issue|broken|defect|dead|guba|wala\s+ga\s*work|wala\s+ga?gana)\b/i,
+    
+    // Specific local phrasing: "wala ga work face id" or "di ga work face id"
+    /\b(wala|wla|di)\s+ga\s*(work|gana)\s+face\s*id\b/i,
+    /\bface\s*id\b[^\n]{0,20}\b(di|dli|dili)\s*na\s*(?:ga\s*)?(work|gana)\b/i,
+    /\b(di|dli|dili)\s*na\s*(?:ga\s*)?(work|gana)\s+face\s*id\b/i,
+
+    // "not available/usable/disabled" phrasing
+    /\bface\s*id\b[^\n]{0,40}\b(not\s*available|unavailable|not\s*usable|can't\s*use|cannot\s*use|failed|failure|error)\b/i,
+    /\bface\s*id\b[^\n]{0,40}\b(disabled|disable)\b[^\n]{0,24}\b(update|ios)\b/i,
+    
+    // Emojis
     /\bface\s*id\b[^\n]{0,12}(?:❌|✖️|✗|x|×)/i,
     /(?:❌|✖️|✗)\s*face\s*id\b/i
   ]);
+
   const faceIdYes = anyMatch(raw, [
-    /\bface\s*id\b[^\n]{0,40}\b(working|works|okay|ok|functional)\b/i,
-    /\b(working|works|okay|ok|functional)\b[^\n]{0,40}\bface\s*id\b/i,
+    // Matches standard and typo versions: "working", "workin", "wrking", "gagana"
+    /\bface\s*id\b[^\n]{0,40}\b(work(in|ing|s|)?|wrking|okay|ok|functional|gagana|naga\s*gana)\b/i,
+    /\b(work(in|ing|s|)?|wrking|okay|ok|functional|gagana|naga\s*gana)\b[^\n]{0,40}\bface\s*id\b/i,
+    
+    // Matches: "with face id", "may faceid"
     /\b(with|w\/|may)\s*face\s*id\b/i,
+    
+    // Emojis
     /\bface\s*id\b[^\n]{0,12}(?:✅|✔️|☑️)/i,
     /(?:✅|✔️|☑️)\s*face\s*id\b/i
   ]);
+
   const faceIdNotWorking = !!faceIdNo;
   const faceIdWorking = !faceIdNo && !!faceIdYes;
 
+  // TrueTone detection must be "label-local" to avoid false positives from unrelated "... not working" phrases
+  // appearing later in the same description (e.g., Face ID not working).
   const trueToneNo = anyMatch(raw, [
     /\b(no|wala|wla)\s+(?:true\s*tone|trutone)\b/i,
-    /\b(?:true\s*tone|trutone)\b[^\n]{0,40}\b(not\s*work|not\s*working|issue|broken|missing|wala|dead)\b/i,
+    /\b(?:true\s*tone|trutone)\b\s*(?:[:=\-]|is|:)?\s*(?:not\s*work(?:ing)?|dead|off|missing|wala|wala gagana|guba|naguba)\b/i,
     /\b(?:true\s*tone|trutone)\b[^\n]{0,12}(?:❌|✖️|✗|x|×)/i,
     /(?:❌|✖️|✗)\s*(?:true\s*tone|trutone)\b/i
   ]);
   const trueToneYes = anyMatch(raw, [
-    /\b(?:true\s*tone|trutone)\b[^\n]{0,40}\b(working|works|okay|ok|functional)\b/i,
-    /\b(working|works|okay|ok|functional)\b[^\n]{0,40}\b(?:true\s*tone|trutone)\b/i,
-    /\b(with|w\/|may)\s*(?:true\s*tone|trutone)\b/i,
-    /\b(?:true\s*tone|trutone)\b[^\n]{0,12}(?:✅|✔️|☑️)/i,
-    /(?:✅|✔️|☑️)\s*(?:true\s*tone|trutone)\b/i
-  ]);
+  // This now matches: working, workin, works, work, wrking
+  /\b(?:true\s*tone|trutone)\b\s*(?:[:=\-]|is|:)?\s*(?:work(in|ing|s|)?|wrking|okay|ok|functional|on)\b/i,
+  /\b(?:true\s*tone|trutone)\b[^\n]{0,24}\bface\s*id\b[^\n]{0,24}\b(work(in|ing|s|)?|wrking|okay|ok|functional|gagana|naga\s*gana)\b/i,
+  /\bface\s*id\b[^\n]{0,24}\b(?:and|&)?\b[^\n]{0,12}\b(?:true\s*tone|trutone)\b[^\n]{0,24}\b(work(in|ing|s|)?|wrking|okay|ok|functional|gagana|naga\s*gana)\b/i,
+  /\b(with|w\/|may)\s*(?:true\s*tone|trutone)\b/i,
+  /\b(?:true\s*tone|trutone)\b[^\n]{0,12}(?:✅|✔️|☑️)/i,
+  /(?:✅|✔️|☑️)\s*(?:true\s*tone|trutone)\b/i
+]);
   const trueToneMissing = !!trueToneNo;
   const trueToneWorking = !trueToneNo && !!trueToneYes;
 
@@ -265,9 +291,17 @@ function detectIssues(text) {
     /\bback\s*glass\b[^\n]{0,40}\b(replace|replaced|replacement)\b/i.test(s) ||
     /\breplaced\s+back\s*glass\b/i.test(s);
 
-  const cameraIssue =
-    /\bcamera\b[^\n]{0,40}\b(issue|problem|broken|not\s*work|not\s*working|blur|fog)\b/i.test(s) ||
-    /\bno\s+camera\b/i.test(s);
+  const cameraOk = anyMatch(raw, [
+    /\bcamera\b[^\n]{0,20}\b(ok|okay|working|functional|good|good\s+quality|clear)\b/i,
+    /\b(ok|okay|working|functional|good|good\s+quality|clear)\b[^\n]{0,20}\bcamera\b/i,
+    /\bcamera\b[^\n]{0,12}(?:✅|✔️|☑️)/i,
+    /(?:✅|✔️|☑️)\s*camera\b/i
+  ]);
+  const cameraIssue = anyMatch(raw, [
+    /\bcamera\b[^\n]{0,12}\b(issue|problem|broken|not\s*work(?:ing)?|blur|fog|defect)\b/i,
+    /\b(issue|problem|broken|not\s*work(?:ing)?|blur|fog|defect)\b[^\n]{0,12}\bcamera\b/i,
+    /\bno\s+camera\b/i
+  ]) && !cameraOk;
 
   const screenIssue =
     /\bscreen\b[^\n]{0,40}\b(issue|problem|broken|lines|green|pink|flicker|burn|dead|touch)\b/i.test(s) ||
@@ -285,6 +319,11 @@ function detectIssues(text) {
     /\b(globe|smart|tnt)\b[^\n]{0,18}\bonly\s*sim\b/i.test(s) ||
     /\bsmart\s*tnt\b[^\n]{0,18}\bonly\b/i.test(s);
 
+  const batteryReplaced = anyMatch(raw, [
+    /\bbattery\b[^\n]{0,24}\b(replace|replaced|replacement|palit|pinalitan)\b/i,
+    /\b(replace|replaced|replacement|palit|pinalitan)\b[^\n]{0,24}\bbattery\b/i
+  ]);
+
   return {
     face_id_working: faceIdWorking ? true : null,
     face_id_not_working: !!faceIdNotWorking,
@@ -292,6 +331,7 @@ function detectIssues(text) {
     trutone_missing: !!trueToneMissing,
     lcd_replaced: !!lcdReplaced,
     back_glass_replaced: !!backGlassReplaced,
+    battery_replaced: !!batteryReplaced,
     camera_issue: !!cameraIssue,
     screen_issue: !!screenIssue,
     network_locked: !!networkLocked
@@ -420,8 +460,6 @@ async function main() {
     const storageGb = parseStorageGb(text);
     const batteryHealth = parseBatteryHealth(text);
     const openline = parseOpenline(text);
-    // Condition is a canonical Marketplace field; rely on scraped `listings.condition_raw`.
-    const conditionText = parseConditionText(l.condition_raw);
     const regionCode = regionCodeFromLocation(l.location_raw);
     const issues = detectIssues(text);
 
@@ -444,6 +482,7 @@ async function main() {
       trutone_missing: issues.trutone_missing || null,
       lcd_replaced: issues.lcd_replaced || null,
       back_glass_replaced: issues.back_glass_replaced || null,
+      battery_replaced: issues.battery_replaced || null,
       camera_issue: issues.camera_issue || null,
       screen_issue: issues.screen_issue || null,
       network_locked: issues.network_locked || null,
@@ -460,7 +499,6 @@ async function main() {
       storage_gb: storageGb,
       battery_health: batteryHealth,
       openline,
-      condition_text: conditionText,
       region_code: regionCode,
       risk_flags: riskFlags,
       updated_at: new Date().toISOString()

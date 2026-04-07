@@ -1,7 +1,6 @@
 import Link from "next/link";
 
-import { CameraOff, Check, FileWarning, Lock, Monitor, Wrench, X } from "lucide-react";
-
+import { ListingSignalPills } from "@/components/listing-signal-pills";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchPublicListings } from "@/lib/data";
 import { formatDateTime, formatPct, formatPhp, formatRelativeAge } from "@/lib/format";
-import { parseRiskFlags } from "@/lib/riskFlags";
 import type { PublicListing } from "@/lib/types";
 
 function asString(v: string | string[] | undefined): string {
@@ -39,65 +37,17 @@ function confidenceBadge(value: unknown) {
   return <span className="text-muted-foreground">—</span>;
 }
 
+function confidenceMini(value: unknown) {
+  const v = String(value || "").toLowerCase();
+  if (v === "high") return <Badge className="h-6 bg-emerald-600 px-2 py-0 text-[11px] text-white">H</Badge>;
+  if (v === "med") return <Badge className="h-6 bg-sky-600 px-2 py-0 text-[11px] text-white">M</Badge>;
+  if (v === "low") return <Badge variant="outline" className="h-6 px-2 py-0 text-[11px] text-muted-foreground">L</Badge>;
+  return null;
+}
+
 function showDeal(row: PublicListing) {
   const s = String(row.deal_score || "").toUpperCase();
   return s === "A" || s === "B" || s === "C";
-}
-
-type SignalChip = { label: string; className?: string };
-
-function buildSignalChips(riskFlags: unknown): SignalChip[] {
-  const flags = parseRiskFlags(riskFlags);
-  const chips: SignalChip[] = [];
-
-  if (flags.no_description) chips.push({ label: "Desc:short", className: "bg-amber-500 text-white" });
-  if (flags.face_id_not_working) chips.push({ label: "FaceID:no", className: "bg-rose-600 text-white" });
-  else if (flags.face_id_working) chips.push({ label: "FaceID:yes", className: "bg-emerald-600 text-white" });
-
-  if (flags.trutone_missing) chips.push({ label: "TT:no", className: "bg-rose-600 text-white" });
-  else if (flags.trutone_working) chips.push({ label: "TT:yes", className: "bg-emerald-600 text-white" });
-
-  if (flags.lcd_replaced) chips.push({ label: "LCD:replaced", className: "bg-amber-500 text-white" });
-  if (flags.network_locked) chips.push({ label: "Lock:locked", className: "bg-slate-700 text-white" });
-  if (flags.camera_issue) chips.push({ label: "Cam:issue", className: "bg-amber-500 text-white" });
-  if (flags.screen_issue) chips.push({ label: "Scr:issue", className: "bg-amber-500 text-white" });
-
-  return chips;
-}
-
-function renderSignalChips(riskFlags: unknown, mode: "dash" | "hide") {
-  const chips = buildSignalChips(riskFlags);
-  if (!chips.length) return mode === "dash" ? <span className="text-muted-foreground">—</span> : null;
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      {chips.map((c) => (
-        <Badge
-          key={c.label}
-          title={c.label.replace(":", " ")}
-          className={`gap-1 ${c.className || ""}`}
-        >
-          {c.label === "Desc:short" ? <FileWarning className="h-3 w-3" aria-hidden /> : null}
-          {c.label === "FaceID:yes" ? <Check className="h-3 w-3" aria-hidden /> : null}
-          {c.label === "FaceID:no" ? <X className="h-3 w-3" aria-hidden /> : null}
-          {c.label === "TT:yes" ? <Check className="h-3 w-3" aria-hidden /> : null}
-          {c.label === "TT:no" ? <X className="h-3 w-3" aria-hidden /> : null}
-          {c.label === "LCD:replaced" ? <Wrench className="h-3 w-3" aria-hidden /> : null}
-          {c.label === "Lock:locked" ? <Lock className="h-3 w-3" aria-hidden /> : null}
-          {c.label === "Cam:issue" ? <CameraOff className="h-3 w-3" aria-hidden /> : null}
-          {c.label === "Scr:issue" ? <Monitor className="h-3 w-3" aria-hidden /> : null}
-          <span>
-            {c.label.startsWith("Desc") ? "Desc" : null}
-            {c.label.startsWith("FaceID") ? "FaceID" : null}
-            {c.label.startsWith("TT") ? "TT" : null}
-            {c.label.startsWith("LCD") ? "LCD" : null}
-            {c.label.startsWith("Lock") ? "Lock" : null}
-            {c.label.startsWith("Cam") ? "Cam" : null}
-            {c.label.startsWith("Scr") ? "Scr" : null}
-          </span>
-        </Badge>
-      ))}
-    </div>
-  );
 }
 
 function buildHref(params: Record<string, string>, overrides: Partial<Record<string, string>>) {
@@ -239,11 +189,6 @@ export default async function Home({
                     const below = dealVisible ? row.below_market_pct : null;
                     const conf = dealVisible ? row.confidence : null;
                     const profit = dealVisible ? row.est_profit_php : null;
-                    const signals = renderSignalChips(row.risk_flags, "hide");
-                    const bh =
-                      typeof row.battery_health === "number" && Number.isFinite(row.battery_health)
-                        ? Math.round(row.battery_health)
-                        : null;
                     return (
                   <Link
                     key={row.listing_id}
@@ -257,20 +202,21 @@ export default async function Home({
                           {row.location_raw || "—"}
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-2">
-                          {signals ? signals : null}
-                          <span className="text-[11px] text-muted-foreground">
-                            BH <span className="font-mono text-foreground">{bh != null ? `${bh}%` : "—"}</span>
-                          </span>
+                          <ListingSignalPills
+                            riskFlags={row.risk_flags}
+                            batteryHealth={row.battery_health}
+                            openline={row.openline}
+                            variant="public"
+                          />
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                           {score ? (
                             <>
-                              <span className="text-foreground">Score</span>
                               {score}
-                              <span>•</span>
-                              <span>{below != null ? `${formatPct(below)} below` : "—"}</span>
-                              <span>•</span>
-                              <span>{String(conf || "—")}</span>
+                              <span className="font-mono text-foreground">
+                                {below != null ? `${formatPct(below)} below` : "—"}
+                              </span>
+                              {confidenceMini(conf)}
                             </>
                           ) : (
                             <span>Deal score —</span>
@@ -307,12 +253,7 @@ export default async function Home({
                       <TableHead>Model</TableHead>
                       <TableHead className="whitespace-nowrap">Price</TableHead>
                       <TableHead className="whitespace-nowrap">Location</TableHead>
-                      <TableHead className="whitespace-nowrap">BH</TableHead>
-                      <TableHead className="whitespace-nowrap">Signals</TableHead>
-                      <TableHead className="whitespace-nowrap">Score</TableHead>
-                      <TableHead className="whitespace-nowrap">Below</TableHead>
-                      <TableHead className="whitespace-nowrap">Conf</TableHead>
-                      <TableHead className="whitespace-nowrap">Profit</TableHead>
+                      <TableHead className="whitespace-nowrap">Deal</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="whitespace-nowrap">Posted</TableHead>
                     </TableRow>
@@ -327,7 +268,7 @@ export default async function Home({
                         const profit = dealVisible ? row.est_profit_php : null;
                         return (
                       <TableRow key={row.listing_id}>
-                        <TableCell className="min-w-[320px]">
+                        <TableCell className="min-w-[320px] max-w-[420px]">
                           <Link
                           href={`/item/${encodeURIComponent(row.listing_id)}`}
                           className="font-medium hover:underline hover:underline-offset-4"
@@ -337,21 +278,44 @@ export default async function Home({
                         <div className="mt-1 font-mono text-[11px] text-muted-foreground">
                           id={row.listing_id}
                         </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <ListingSignalPills
+                            riskFlags={row.risk_flags}
+                            batteryHealth={row.battery_health}
+                            openline={row.openline}
+                            variant="public"
+                          />
+                        </div>
                         </TableCell>
                         <TableCell className="whitespace-nowrap font-mono">{formatPhp(row.price_php)}</TableCell>
-                        <TableCell className="whitespace-nowrap">{row.location_raw || "—"}</TableCell>
-                        <TableCell className="whitespace-nowrap font-mono">
-                          {typeof row.battery_health === "number" && Number.isFinite(row.battery_health)
-                            ? `${Math.round(row.battery_health)}%`
-                            : "—"}
+                        <TableCell className="max-w-[200px] truncate" title={row.location_raw || ""}>
+                          {row.location_raw || "—"}
                         </TableCell>
-                        <TableCell className="min-w-[140px]">{renderSignalChips(row.risk_flags, "dash")}</TableCell>
-                        <TableCell className="whitespace-nowrap">{score || <span className="text-muted-foreground">—</span>}</TableCell>
-                        <TableCell className="whitespace-nowrap font-mono">
-                          {below != null ? `${formatPct(below)} below` : "—"}
+                        <TableCell className="whitespace-nowrap">
+                          {dealVisible ? (
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">Score</span>
+                                {score || <span className="text-muted-foreground">—</span>}
+                              </div>
+                              <div className="text-[11px] text-muted-foreground">
+                                {below != null ? (
+                                  <span className="font-mono text-foreground">{formatPct(below)} below</span>
+                                ) : (
+                                  "—"
+                                )}
+                                <span className="mx-1">•</span>
+                                {confidenceBadge(conf)}
+                              </div>
+                              <div className="text-[11px] text-muted-foreground">
+                                profit{" "}
+                                <span className="font-mono text-foreground">{formatPhp(profit)}</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap">{dealVisible ? confidenceBadge(conf) : <span className="text-muted-foreground">—</span>}</TableCell>
-                        <TableCell className="whitespace-nowrap font-mono">{dealVisible ? formatPhp(profit) : "—"}</TableCell>
                         <TableCell>{statusBadge(row.status)}</TableCell>
                         <TableCell className="whitespace-nowrap">
                           <span title={formatDateTime(row.posted_at || row.first_seen_at)}>
