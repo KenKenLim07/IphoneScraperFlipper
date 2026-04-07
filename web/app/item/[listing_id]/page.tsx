@@ -49,6 +49,7 @@ function buildWarnings(listing: any): string[] {
   if (flags.network_locked) warnings.push("Network-locked (Globe/Smart/SIM lock)");
   if (flags.trutone_missing) warnings.push("TrueTone missing");
   if (flags.back_glass_replaced) warnings.push("Back glass replaced");
+  if (flags.back_glass_cracked) warnings.push("Back glass cracked");
   if (flags.battery_replaced) warnings.push("Battery replaced");
   if (flags.no_description) warnings.push("No/short description (unknown condition)");
 

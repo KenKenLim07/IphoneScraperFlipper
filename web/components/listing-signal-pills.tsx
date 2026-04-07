@@ -7,6 +7,7 @@ import {
   FileWarning,
   Fingerprint,
   Lock,
+  Unlock,
   Monitor,
   SunMedium,
   UserSearch,
@@ -81,6 +82,10 @@ export function ListingSignalPills({
   const bhTone: PillTone =
     bh == null ? "unknown" : bh >= 90 ? "good" : bh >= 80 ? "warn" : "bad";
 
+  const lockLabel = flags.network_locked ? "Lock" : openline === true ? "Unlocked" : "Lock";
+  const lockTitle = flags.network_locked ? "Network locked" : openline === true ? "Unlocked" : "Lock status unknown";
+  const lockIcon = flags.network_locked ? Lock : openline === true ? Unlock : Lock;
+
   const checklist: PillProps[] = [
     {
       label: "FaceID",
@@ -101,9 +106,9 @@ export function ListingSignalPills({
       tone: simTone
     },
     {
-      label: "Lock",
-      title: flags.network_locked ? "Network locked" : openline === true ? "Unlocked" : "Lock status unknown",
-      icon: Lock,
+      label: lockLabel,
+      title: lockTitle,
+      icon: lockIcon,
       tone: lockTone
     },
     {

@@ -29,7 +29,10 @@ function isLikelyMarketplaceResponse(url, contentType) {
   const lowerUrl = String(url || "").toLowerCase();
   const lowerType = String(contentType || "").toLowerCase();
   // Facebook often serves GraphQL as JSON, but content-type can vary.
-  if (lowerUrl.includes("graphql")) return true;
+  if (lowerUrl.includes("graphql")) {
+    if (!lowerType) return true;
+    return lowerType.includes("json") || lowerType.includes("javascript") || lowerType.includes("text");
+  }
   if (lowerUrl.includes("/api/graphql")) return true;
   if (lowerType.includes("application/json") && lowerUrl.includes("marketplace")) return true;
   return lowerType.includes("application/json") && (lowerUrl.includes("graphql") || lowerUrl.includes("marketplace"));
@@ -218,7 +221,7 @@ async function extractFromDom(page, { maxCards, scrollPages, scrollDelayMs, runI
     seenInRun.add(listingId);
     const url = canonicalMarketplaceItemUrl(rawUrl, listingId);
     const title = sanitizeTitle(inferTitle(raw.cardText, raw.title || raw.anchorText));
-    const priceRaw = extractBestPhpPriceRaw(raw.cardText) || extractPrice(raw.cardText);
+    const priceRaw = extractPrice(raw.cardText) || extractBestPhpPriceRaw(raw.cardText);
     const pricePhp = parsePhpPrice(priceRaw);
     const locationRaw = inferLocation(raw.cardText);
     const description = inferDescription(raw.cardText, title, priceRaw);
@@ -489,6 +492,40 @@ export async function extractDiscoveryRows(page, opts) {
       dupListingIdsSkipped += dom.dupListingIdsSkipped;
       for (const row of dom.rows) merged.set(String(row.listing_id), row);
       if (logEnabled) log(`[INFO] data_fallback=dom_topup added=${dom.rows.length} total=${merged.size}`);
+    }
+
+    // Overlay DOM prices when network JSON is stale (prefer first price seen on card).
+    if (merged.size && useNetwork) {
+      try {
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await sleep(Math.min(1200, Math.max(0, scrollDelayMs)));
+      } catch {}
+      const domOverlay = await extractFromDom(page, {
+        maxCards: Math.min(maxCards, 60),
+        scrollPages: Math.min(1, Math.max(0, scrollPages || 0)),
+        scrollDelayMs,
+        runId,
+        scrapedAt,
+        logEnabled: false,
+        log,
+        seenInRun: new Set()
+      });
+      let overlayed = 0;
+      for (const row of domOverlay.rows) {
+        const id = String(row.listing_id || "");
+        if (!id || !merged.has(id)) continue;
+        const existing = merged.get(id);
+        if (row.price_php != null && Number.isFinite(row.price_php)) {
+          existing.price_raw = row.price_raw;
+          existing.price_php = row.price_php;
+        }
+        if (!existing.posted_at && row.posted_at) existing.posted_at = row.posted_at;
+        if (!existing.location_raw && row.location_raw) existing.location_raw = row.location_raw;
+        if (!existing.title && row.title) existing.title = row.title;
+        if (!existing.description && row.description) existing.description = row.description;
+        overlayed += 1;
+      }
+      if (logEnabled && overlayed) log(`[INFO] data_overlay=dom_price updated=${overlayed}`);
     }
 
     rows = Array.from(merged.values()).slice(0, maxCards);

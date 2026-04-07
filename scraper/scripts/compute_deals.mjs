@@ -270,6 +270,8 @@ function detectIssues(text) {
   const trueToneNo = anyMatch(raw, [
     /\b(no|wala|wla)\s+(?:true\s*tone|trutone)\b/i,
     /\b(?:true\s*tone|trutone)\b\s*(?:[:=\-]|is|:)?\s*(?:not\s*work(?:ing)?|dead|off|missing|wala|wala gagana|guba|naguba)\b/i,
+    /\b(?:true\s*tone|trutone)\b[^\n]{0,40}\b(not\s*work(?:ing)?|dead|off|missing|guba)\b[^\n]{0,24}\b(update|ios)\b/i,
+    /\b(?:true\s*tone|trutone)\b[^\n]{0,24}\b(due\s+to|after)\s*(?:ios\s*)?update\b/i,
     /\b(?:true\s*tone|trutone)\b[^\n]{0,12}(?:❌|✖️|✗|x|×)/i,
     /(?:❌|✖️|✗)\s*(?:true\s*tone|trutone)\b/i
   ]);
@@ -288,8 +290,16 @@ function detectIssues(text) {
   const lcdReplaced = detectLcdReplaced(raw);
 
   const backGlassReplaced =
-    /\bback\s*glass\b[^\n]{0,40}\b(replace|replaced|replacement)\b/i.test(s) ||
+    /\bback\s*glass\b[^\n]{0,40}\b(replace|replaced|replacement|palit|pinalitan)\b/i.test(s) ||
     /\breplaced\s+back\s*glass\b/i.test(s);
+
+  const backGlassCracked = anyMatch(raw, [
+    /\bcrack(?:ed)?\b[^\n]{0,24}\bback\s*glass\b/i,
+    /\bback\s*glass\b[^\n]{0,24}\bcrack(?:ed)?\b/i,
+    /\bbackglass\b[^\n]{0,24}\bcrack(?:ed)?\b/i,
+    /\bbasag\b[^\n]{0,24}\bback\s*glass\b/i,
+    /\bback\s*glass\b[^\n]{0,24}\bbasag\b/i
+  ]);
 
   const cameraOk = anyMatch(raw, [
     /\bcamera\b[^\n]{0,20}\b(ok|okay|working|functional|good|good\s+quality|clear)\b/i,
@@ -331,6 +341,7 @@ function detectIssues(text) {
     trutone_missing: !!trueToneMissing,
     lcd_replaced: !!lcdReplaced,
     back_glass_replaced: !!backGlassReplaced,
+    back_glass_cracked: !!backGlassCracked,
     battery_replaced: !!batteryReplaced,
     camera_issue: !!cameraIssue,
     screen_issue: !!screenIssue,
@@ -401,9 +412,10 @@ function riskCostFromText(text) {
   const trutone = issues.trutone_missing ? 1500 : 0;
   const camera = issues.camera_issue ? 2000 : 0;
   const display = issues.lcd_replaced ? 2500 : issues.screen_issue ? 2500 : 0;
+  const backGlass = issues.back_glass_cracked ? 1500 : issues.back_glass_replaced ? 800 : 0;
   const battery = cost(/\bbattery\b.*\b(issue|problem|broken|service)\b/i, 1500);
 
-  return faceId + trutone + camera + display + battery;
+  return faceId + trutone + camera + display + backGlass + battery;
 }
 
 function formatPhpCompact(v) {
@@ -583,7 +595,11 @@ async function main() {
       c.risk_flags?.lcd_replaced ||
       c.risk_flags?.network_locked
     );
-    const hasMinorIssue = !!(c.risk_flags?.trutone_missing || c.risk_flags?.back_glass_replaced);
+    const hasMinorIssue = !!(
+      c.risk_flags?.trutone_missing ||
+      c.risk_flags?.back_glass_replaced ||
+      c.risk_flags?.back_glass_cracked
+    );
     const lowConfidenceComps = sampleSize < 10;
     const noDesc = !!c.risk_flags?.no_description;
 
@@ -634,6 +650,7 @@ async function main() {
       } else if (hasMinorIssue) {
         if (c.risk_flags?.trutone_missing) reasons.push("⚠️ TrueTone missing (score capped to B)");
         if (c.risk_flags?.back_glass_replaced) reasons.push("⚠️ Back glass replaced (score capped to B)");
+        if (c.risk_flags?.back_glass_cracked) reasons.push("⚠️ Back glass cracked (score capped to B)");
       }
 
       if (lowConfidenceComps) reasons.push(`⚠️ Low confidence comps (n=${sampleSize}, score capped to C)`);
