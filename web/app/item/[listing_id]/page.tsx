@@ -44,10 +44,11 @@ function buildWarnings(listing: any): string[] {
   if (flags.wanted_post) warnings.push("Looks like buyer/wanted post (LF/WTB/BUYING)");
   if (flags.face_id_not_working) warnings.push("Face ID not working");
   if (flags.screen_issue) warnings.push("Screen issue detected");
-  if (flags.camera_issue) warnings.push("Camera issue detected");
-  if (flags.lcd_replaced) warnings.push("LCD replaced");
-  if (flags.network_locked) warnings.push("Network-locked (Globe/Smart/SIM lock)");
-  if (flags.trutone_missing) warnings.push("TrueTone missing");
+    if (flags.camera_issue) warnings.push("Camera issue detected");
+    if (flags.lcd_replaced) warnings.push("LCD replaced");
+    if (flags.network_locked) warnings.push("Network-locked (Globe/Smart/SIM lock)");
+    if (flags.wifi_only) warnings.push("WiFi-only (no cellular)");
+    if (flags.trutone_missing) warnings.push("TrueTone missing");
   if (flags.back_glass_replaced) warnings.push("Back glass replaced");
   if (flags.back_glass_cracked) warnings.push("Back glass cracked");
   if (flags.battery_replaced) warnings.push("Battery replaced");
@@ -128,7 +129,6 @@ export default async function ItemPage({ params }: { params: Promise<{ listing_i
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Description</CardTitle>
-            <CardDescription>From the listing detail page (when available).</CardDescription>
           </CardHeader>
           <CardContent>
             {listing.description ? (

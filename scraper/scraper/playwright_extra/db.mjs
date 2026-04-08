@@ -227,6 +227,19 @@ export async function persistToDatabase(rows, { log } = {}) {
     }
 
     if (existing) {
+      const existingSellerId = cleanText(existing.listing_seller_id);
+      if (existingSellerId) {
+        nextListingSellerId = existingSellerId;
+      }
+      const existingLocationCity = cleanText(existing.listing_location_city);
+      if (existingLocationCity) {
+        nextListingLocationCity = existingLocationCity;
+      }
+      const existingLocationState = cleanText(existing.listing_location_state);
+      if (existingLocationState) {
+        nextListingLocationState = existingLocationState;
+      }
+
       if (isWeakDescription(nextDescription) && !isWeakDescription(existing.description)) {
         nextDescription = existing.description;
       }
@@ -258,15 +271,6 @@ export async function persistToDatabase(rows, { log } = {}) {
       if (nextListingIsHidden == null && typeof existing.listing_is_hidden === "boolean") {
         nextListingIsHidden = existing.listing_is_hidden;
       }
-      if (!cleanText(nextListingSellerId) && cleanText(existing.listing_seller_id)) {
-        nextListingSellerId = cleanText(existing.listing_seller_id);
-      }
-      if (!cleanText(nextListingLocationCity) && cleanText(existing.listing_location_city)) {
-        nextListingLocationCity = cleanText(existing.listing_location_city);
-      }
-    if (!cleanText(nextListingLocationState) && cleanText(existing.listing_location_state)) {
-      nextListingLocationState = cleanText(existing.listing_location_state);
-    }
       if ((nextPricePhp == null || !Number.isFinite(nextPricePhp)) && existing.price_php != null) {
         nextPricePhp = existing.price_php;
         if (!cleanText(nextPriceRaw) && cleanText(existing.price_raw)) {
@@ -417,6 +421,27 @@ export async function persistToDatabase(rows, { log } = {}) {
 
   const existing = updated + unchanged;
   return { inserted, updated, unchanged, existing, versionsInserted, changedFieldCounts, changeSamples };
+}
+
+export async function persistScrapeRunMetrics({ runId, phase, status, startedAt, finishedAt, metrics, log }) {
+  const supabase = createSupabaseClient();
+  try {
+    const payload = {
+      run_id: runId,
+      phase,
+      status,
+      started_at: startedAt,
+      finished_at: finishedAt,
+      metrics: metrics || {}
+    };
+    const res = await supabase.from("scrape_run_metrics").insert(payload);
+    if (res.error) throw new Error(res.error.message);
+    return { ok: true };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    log?.(`[WARN] scrape_run_metrics_failed phase=${phase} error=${msg}`);
+    return { ok: false, error: msg };
+  }
 }
 
 function dedupeRowsByListingId(rows) {

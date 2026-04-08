@@ -6,12 +6,13 @@ import {
   fetchExistingListingIds,
   persistDiscoveryInsertOnlyBatched,
   persistDiscoveryNetworkUpdateBatched,
+  persistScrapeRunMetrics,
   persistToDatabaseBatched
 } from "./db.mjs";
 import { extractDiscoveryRows, installNetworkListingCollector } from "./extract_feed.mjs";
 import { looksLikeLoginOrBlock } from "./fb_checks.mjs";
 import { fetchWatchlistCandidates, recheckCandidatesChunk } from "./monitor.mjs";
-import { envBool, gotoWithRetry, looksLikeBuyerWantedPost, randomBetween, sleep } from "./utils.mjs";
+import { cleanText, envBool, gotoWithRetry, looksLikeBuyerWantedPost, randomBetween, sleep } from "./utils.mjs";
 
 function parseKeywordList(value) {
   const raw = String(value || "").trim();
@@ -74,6 +75,50 @@ function shouldSkipAsNoise(row, cfg) {
   return { skip: false, reason: null };
 }
 
+function hasGraphqlStatus(row) {
+  return ["listing_is_live", "listing_is_sold", "listing_is_pending", "listing_is_hidden"].some(
+    (key) => typeof row?.[key] === "boolean"
+  );
+}
+
+function mergeEnrichedRow(baseRow, enrichedRow, counters) {
+  if (!enrichedRow) return baseRow;
+  const merged = { ...baseRow };
+  let changed = false;
+
+  const enrichDescription = cleanText(enrichedRow.description);
+  if (!cleanText(merged.description) && enrichDescription) {
+    merged.description = enrichDescription;
+    counters.descFilled += 1;
+    changed = true;
+  }
+
+  const enrichCondition = cleanText(enrichedRow.condition_raw);
+  if (!cleanText(merged.condition_raw) && enrichCondition) {
+    merged.condition_raw = enrichCondition;
+    counters.conditionFilled += 1;
+    changed = true;
+  }
+
+  const baseHasStatus = hasGraphqlStatus(baseRow);
+  const enrichStatus = cleanText(enrichedRow.listing_status);
+  if (!baseHasStatus && enrichStatus) {
+    merged.listing_status = enrichStatus;
+    counters.statusFallback += 1;
+    changed = true;
+  }
+
+  const enrichPostedAt = enrichedRow.posted_at;
+  if (!merged.posted_at && enrichPostedAt) {
+    merged.posted_at = enrichPostedAt;
+    counters.postedAtFilled += 1;
+    changed = true;
+  }
+
+  if (changed) counters.merged += 1;
+  return merged;
+}
+
 export async function runBootstrapLogin({ context, log }) {
   const page = await context.newPage();
   await page.goto("https://www.facebook.com/login", { waitUntil: "domcontentloaded", timeout: 90000 });
@@ -93,6 +138,7 @@ export async function runDiscoveryJob({
   writeDiscoveryJson = true
 }) {
   const page = await context.newPage();
+  const startedAt = new Date().toISOString();
   try {
     if (cfg.discoveryFeedBlockImages) {
       try {
@@ -200,12 +246,12 @@ export async function runDiscoveryJob({
 
     const skippedExisting = filtered.length - newRows.length;
 
-    const doEnrich = cfg.discoveryEnrichEnabled && !cfg.discoveryGraphqlOnly && newRows.length > 0;
+    const doEnrich = cfg.discoveryEnrichEnabled && newRows.length > 0;
     const chunkSize = Math.max(1, cfg.discoveryEnrichChunkSize || 20);
     const concurrency = Math.max(1, Math.min(cfg.discoveryEnrichConcurrency || 2, 6));
 
     if (cfg.discoveryGraphqlOnly && cfg.discoveryEnrichEnabled) {
-      log("[INFO] discovery_graphql_only enabled; skipping enrich.");
+      log("[INFO] discovery_graphql_only enabled; enrich will run in merge mode.");
     }
     if (doEnrich) {
       log(
@@ -216,6 +262,17 @@ export async function runDiscoveryJob({
     let inserted = 0;
     let versionsInserted = 0;
     let updatedExisting = 0;
+    const mergeCounters = {
+      merged: 0,
+      descFilled: 0,
+      conditionFilled: 0,
+      statusFallback: 0,
+      postedAtFilled: 0
+    };
+    let graphqlRows = 0;
+    let domOnlyRows = 0;
+    let statusMissingRows = 0;
+    let sellerMissingRows = 0;
 
     for (let i = 0; i < newRows.length; i += chunkSize) {
       const chunk = newRows.slice(i, i + chunkSize);
@@ -242,12 +299,38 @@ export async function runDiscoveryJob({
       }
 
       const byId = new Map(enriched.map((r) => [String(r.listing_id), r]));
-      const finalRows = chunk.map((r) => byId.get(String(r.listing_id)) || r);
+      const finalRows = chunk.map((row) =>
+        mergeEnrichedRow(row, byId.get(String(row.listing_id)) || null, mergeCounters)
+      );
+      for (const row of finalRows) {
+        const hasGraphql =
+          row.listing_price_amount != null ||
+          typeof row.listing_is_live === "boolean" ||
+          typeof row.listing_is_sold === "boolean" ||
+          typeof row.listing_is_pending === "boolean" ||
+          typeof row.listing_is_hidden === "boolean" ||
+          cleanText(row.listing_seller_id) ||
+          cleanText(row.listing_location_city) ||
+          cleanText(row.listing_location_state);
+        if (hasGraphql) graphqlRows += 1;
+        else domOnlyRows += 1;
+        const statusMissing = !hasGraphqlStatus(row);
+        if (statusMissing) statusMissingRows += 1;
+        if (!cleanText(row.listing_seller_id)) sellerMissingRows += 1;
+      }
 
       // eslint-disable-next-line no-await-in-loop
       const res = await persistDiscoveryInsertOnlyBatched(finalRows, { phase: "discovery", runId, log });
       inserted += res.inserted;
       versionsInserted += res.versionsInserted;
+    }
+
+    if (doEnrich) {
+      log(
+        `[INFO] discovery_enrich_merge merged=${mergeCounters.merged} desc_filled=${mergeCounters.descFilled} ` +
+          `condition_filled=${mergeCounters.conditionFilled} status_fallback=${mergeCounters.statusFallback} ` +
+          `posted_at_filled=${mergeCounters.postedAtFilled}`
+      );
     }
 
     if (cfg.discoveryUpdateExistingGraphql && existingRows.length) {
@@ -263,6 +346,30 @@ export async function runDiscoveryJob({
         `listings_updated=${updatedExisting} versions_inserted=${versionsInserted}`
     );
 
+    await persistScrapeRunMetrics({
+      runId,
+      phase: "discovery",
+      status: "success",
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      metrics: {
+        cards_seen: extracted.cardsSeen,
+        rows_extracted: extracted.rows.length,
+        inserted,
+        skipped_existing: skippedExisting,
+        listings_updated: updatedExisting,
+        versions_inserted: versionsInserted,
+        enrich_enabled: !!cfg.discoveryEnrichEnabled,
+        graphql_only: !!cfg.discoveryGraphqlOnly,
+        graphql_rows: graphqlRows,
+        dom_only_rows: domOnlyRows,
+        status_missing_rows: statusMissingRows,
+        seller_missing_rows: sellerMissingRows,
+        enrich_merge: mergeCounters
+      },
+      log
+    });
+
     return {
       cardsSeen: extracted.cardsSeen,
       rowsExtracted: extracted.rows.length,
@@ -271,6 +378,19 @@ export async function runDiscoveryJob({
       versionsInserted
     };
   } finally {
+    if (cfg.dryRun) {
+      await persistScrapeRunMetrics({
+        runId,
+        phase: "discovery",
+        status: "success",
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        metrics: {
+          dry_run: true
+        },
+        log
+      });
+    }
     await page.close().catch(() => {});
   }
 }
@@ -312,6 +432,7 @@ export async function runMonitorJob({
   writeMonitorJson = true,
   logRowsOnDryRun = true
 }) {
+  const startedAt = new Date().toISOString();
   const finalLimit = limit ?? cfg.watchlistRecheckLimit;
   const candidates = await fetchWatchlistCandidates({
     limit: finalLimit
@@ -424,6 +545,25 @@ export async function runMonitorJob({
     `[INFO] monitor_sources network=${networkHitCount} embed=${embedHitCount} none=${noneHitCount} ` +
       `embed_checked=${embedCheckedTotal} embed_matched=${embedMatchedTotal}`
   );
+  await persistScrapeRunMetrics({
+    runId,
+    phase: "monitor",
+    status: "success",
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    metrics: {
+      candidates: candidatesCount,
+      rows_checked: rows.length,
+      listings_updated: totalUpdated,
+      versions_inserted: totalVersions,
+      network_hits: networkHitCount,
+      embed_hits: embedHitCount,
+      none_hits: noneHitCount,
+      embed_checked: embedCheckedTotal,
+      embed_matched: embedMatchedTotal
+    },
+    log
+  });
   const counts = formatCounts(totalFieldCounts);
   if (counts) log(`[INFO] db_change_counts ${counts}`);
   if (logChanges && changeSamples.length) {

@@ -12,7 +12,8 @@ import {
   SunMedium,
   UserSearch,
   Wrench,
-  CardSim
+  CardSim,
+  Wifi
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +28,7 @@ type PillProps = {
   icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
   tone: PillTone;
   mono?: boolean;
+  kind?: "lock";
 };
 
 const toneClasses: Record<PillTone, string> = {
@@ -109,7 +111,8 @@ export function ListingSignalPills({
       label: lockLabel,
       title: lockTitle,
       icon: lockIcon,
-      tone: lockTone
+      tone: lockTone,
+      kind: "lock"
     },
     {
       label: `BH ${bh != null ? `${bh}%` : "-"}`,
@@ -120,7 +123,7 @@ export function ListingSignalPills({
     }
   ];
 
-  const publicChecklist: PillProps[] = checklist.filter((pill) => pill.label !== "Lock");
+  const publicChecklist: PillProps[] = checklist.filter((pill) => pill.kind !== "lock");
   const descOnly: PillProps[] = [
     {
       label: "Short/No Description",
@@ -151,15 +154,21 @@ export function ListingSignalPills({
             icon: CameraOff,
             tone: "warn"
           },
-          flags.screen_issue && {
-            label: "Scr",
-            title: "Screen issue",
-            icon: Monitor,
-            tone: "warn"
-          },
-          flags.wanted_post && {
-            label: "Buyer",
-            title: "Buyer/wanted post detected",
+        flags.screen_issue && {
+          label: "Scr",
+          title: "Screen issue",
+          icon: Monitor,
+          tone: "warn"
+        },
+        flags.wifi_only && {
+          label: "WiFi-only",
+          title: "WiFi-only (no cellular)",
+          icon: Wifi,
+          tone: "warn"
+        },
+        flags.wanted_post && {
+          label: "Buyer",
+          title: "Buyer/wanted post detected",
             icon: UserSearch,
             tone: "bad"
           },

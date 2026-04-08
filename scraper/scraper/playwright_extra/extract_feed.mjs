@@ -536,13 +536,6 @@ export function installNetworkListingCollector(page, { log, saveNetworkRaw, runI
         const contentType = response.headers()["content-type"] || "";
         const url = response.url();
         const isCandidate = isLikelyMarketplaceResponse(url, contentType);
-        if ((networkDebugAll || (networkDebugEnabled && isCandidate)) && networkDebugLogged < 30) {
-          networkDebugLogged += 1;
-          log?.(
-            `[INFO] network_debug url=${url} status=${response.status()} content_type=${String(contentType).slice(0, 80)}`
-          );
-        }
-
         if (!isCandidate) return;
         networkCandidates += 1;
 
@@ -556,10 +549,19 @@ export function installNetworkListingCollector(page, { log, saveNetworkRaw, runI
             if (saveNetworkRaw && networkPayloads.length < 50) {
               networkPayloads.push({ url, data: jsonLine });
             }
+            const beforeCount = networkListings.size;
             const networkMap = new Map();
             collectNetworkListings(jsonLine, networkMap);
             for (const [key, value] of networkMap.entries()) {
               if (!networkListings.has(key)) networkListings.set(key, value);
+            }
+            const addedListings = networkListings.size - beforeCount;
+            if ((networkDebugAll || networkDebugEnabled) && addedListings > 0 && networkDebugLogged < 30) {
+              networkDebugLogged += 1;
+              log?.(
+                `[INFO] network_debug url=${url} status=${response.status()} content_type=${String(contentType).slice(0, 80)} ` +
+                  `added=${addedListings} total=${networkListings.size}`
+              );
             }
             return;
           }
@@ -599,10 +601,19 @@ export function installNetworkListingCollector(page, { log, saveNetworkRaw, runI
           networkPayloads.push({ url, data });
         }
 
+        const beforeCount = networkListings.size;
         const networkMap = new Map();
         collectNetworkListings(data, networkMap);
         for (const [key, value] of networkMap.entries()) {
           if (!networkListings.has(key)) networkListings.set(key, value);
+        }
+        const addedListings = networkListings.size - beforeCount;
+        if ((networkDebugAll || networkDebugEnabled) && addedListings > 0 && networkDebugLogged < 30) {
+          networkDebugLogged += 1;
+          log?.(
+            `[INFO] network_debug url=${url} status=${response.status()} content_type=${String(contentType).slice(0, 80)} ` +
+              `added=${addedListings} total=${networkListings.size}`
+          );
         }
       } catch {}
     })();
@@ -769,6 +780,28 @@ export async function extractDiscoveryRows(page, opts) {
         state = effectiveCollector.getState();
         if (state.networkListings.size > 0) break;
       }
+    }
+
+    if (state.networkListings.size === 0 && effectiveCollector) {
+      if (logEnabled) log("[INFO] network_reload reason=no_listings");
+      try {
+        effectiveCollector.clear?.();
+      } catch {}
+      try {
+        await page.reload({ waitUntil: "domcontentloaded", timeout: Math.max(1, selectorTimeoutMs || 60000) });
+      } catch {}
+      try {
+        await page.waitForSelector(MARKETPLACE_SELECTOR, { timeout: Math.max(1, selectorTimeoutMs || 60000) });
+      } catch {}
+      try {
+        await page.evaluate(() => {
+          window.scrollBy(0, Math.floor(window.innerHeight * 0.7));
+        });
+      } catch {}
+      const reloadWaitMs = Math.max(0, envInt("SCRAPE_NETWORK_RELOAD_WAIT_MS", 1200));
+      if (reloadWaitMs) await sleep(reloadWaitMs);
+      await effectiveCollector.flush(Math.max(500, reloadWaitMs * 2));
+      state = effectiveCollector.getState();
     }
 
     const fromNetworkAll = Array.from(state.networkListings.values()).map((row) => ({

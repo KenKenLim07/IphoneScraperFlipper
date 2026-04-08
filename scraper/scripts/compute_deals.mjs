@@ -62,14 +62,23 @@ function parseModelFamily(text) {
   return null;
 }
 
-function parseVariant(text) {
+function parseVariant(text, modelFamily) {
   const s = String(text || "").toLowerCase();
   // X-series "Max" variants (XS Max). Keep as a distinct variant.
   if (/\b(xs|x)\s*max\b/i.test(s) || /\bxsmax\b/i.test(s)) return "max";
   if (/(pro\s*max|promax)/i.test(s)) return "pro_max";
   if (/\bpro\b/i.test(s)) return "pro";
-  if (/\bplus\b/i.test(s)) return "plus";
   if (/\bmini\b/i.test(s)) return "mini";
+
+  const numMatch = modelFamily ? /iphone_(\d{1,2})/i.exec(modelFamily) : null;
+  const modelNumber = numMatch ? Number.parseInt(numMatch[1], 10) : null;
+  const plusAllowed =
+    Number.isFinite(modelNumber) && [7, 8, 14, 15, 16, 17, 18, 19, 20].includes(modelNumber);
+  if (plusAllowed && Number.isFinite(modelNumber)) {
+    const plusRe = new RegExp(`\\biphone\\s*${modelNumber}\\s*plus\\b|\\b${modelNumber}\\s*plus\\b`, "i");
+    if (plusRe.test(s)) return "plus";
+  }
+
   return "base";
 }
 
@@ -115,7 +124,10 @@ function parseBatteryHealth(text) {
     // compact "100batt" / "92 batt" (some sellers omit "health")
     /\b(\d{2,3})\s*%?\s*batt\b/gi,
     /\bbatt\s*(\d{2,3})\b/gi,
-    /\bbh\s*(\d{2,3})\b/gi
+    /\bbh\s*(\d{2,3})\b/gi,
+    // plain "battery 100" / "100 battery"
+    /\bbattery\b[^\d\n]{0,12}?(\d{2,3})\s*%?\b/gi,
+    /\b(\d{2,3})\s*%?[^\d\n]{0,8}\bbattery\b/gi
   ];
 
   for (const re of patterns) {
@@ -160,6 +172,14 @@ function hasIcloudRisk(text) {
     /\bicloud\s+(clean|clear|ready|ok)\b/i.test(s) ||
     /\bno\s+icloud\b/i.test(s) ||
     /\bicloud\s+ready\s+to\s+(sign\s*in|use)\b/i.test(s);
+
+  if (
+    /\b(nalimtan|nalipatan|nalipat|nalimot|nakalimtan|nakalimot)\b[^\n]{0,24}\b(pass|password)\b[^\n]{0,24}\bicloud\b/i.test(s) ||
+    /\b(pass|password)\b[^\n]{0,16}\bsa\b[^\n]{0,8}\bicloud\b/i.test(s) ||
+    /\bforgot(?:ten)?\b[^\n]{0,24}\b(pass|password)\b[^\n]{0,24}\bicloud\b/i.test(s)
+  ) {
+    return true;
+  }
 
   if (/\bnot\s+safe\s+to\s+reset\b/i.test(s)) return true;
   if (/\bactivation\s+lock\b/i.test(s)) return true;
@@ -223,7 +243,8 @@ function detectIssues(text) {
       back_glass_replaced: false,
       camera_issue: false,
       screen_issue: false,
-      network_locked: false
+      network_locked: false,
+      wifi_only: false
     };
   }
 
@@ -253,6 +274,8 @@ function detectIssues(text) {
     // Matches standard and typo versions: "working", "workin", "wrking", "gagana"
     /\bface\s*id\b[^\n]{0,40}\b(work(in|ing|s|)?|wrking|okay|ok|functional|gagana|naga\s*gana)\b/i,
     /\b(work(in|ing|s|)?|wrking|okay|ok|functional|gagana|naga\s*gana)\b[^\n]{0,40}\bface\s*id\b/i,
+    /\b(all\s*working|allworking)\b[^\n]{0,24}\bface\s*id\b/i,
+    /\bface\s*id\b[^\n]{0,24}\b(all\s*working|allworking)\b/i,
     
     // Matches: "with face id", "may faceid"
     /\b(with|w\/|may)\s*face\s*id\b/i,
@@ -268,21 +291,25 @@ function detectIssues(text) {
   // TrueTone detection must be "label-local" to avoid false positives from unrelated "... not working" phrases
   // appearing later in the same description (e.g., Face ID not working).
   const trueToneNo = anyMatch(raw, [
-    /\b(no|wala|wla)\s+(?:true\s*tone|trutone)\b/i,
-    /\b(?:true\s*tone|trutone)\b\s*(?:[:=\-]|is|:)?\s*(?:not\s*work(?:ing)?|dead|off|missing|wala|wala gagana|guba|naguba)\b/i,
-    /\b(?:true\s*tone|trutone)\b[^\n]{0,40}\b(not\s*work(?:ing)?|dead|off|missing|guba)\b[^\n]{0,24}\b(update|ios)\b/i,
-    /\b(?:true\s*tone|trutone)\b[^\n]{0,24}\b(due\s+to|after)\s*(?:ios\s*)?update\b/i,
-    /\b(?:true\s*tone|trutone)\b[^\n]{0,12}(?:❌|✖️|✗|x|×)/i,
-    /(?:❌|✖️|✗)\s*(?:true\s*tone|trutone)\b/i
+    /\b(no|wala|wla)\s+(?:true\s*tone|trutone|trueton)\b/i,
+    /\b(?:true\s*tone|trutone|trueton)\b\s*(?:[:=\-]|is|:)?\s*(?:not\s*work(?:ing)?|dead|off|missing|wala|wala gagana|guba|naguba)\b/i,
+    /\b(?:true\s*tone|trutone|trueton)\b[^\n]{0,40}\b(not\s*work(?:ing)?|dead|off|missing|guba)\b[^\n]{0,24}\b(update|ios)\b/i,
+    /\b(?:true\s*tone|trutone|trueton)\b[^\n]{0,24}\b(due\s+to|after)\s*(?:ios\s*)?update\b/i,
+    /\b(?:true\s*tone|trutone|trueton)\b[^\n]{0,12}(?:❌|✖️|✗|x|×)/i,
+    /(?:❌|✖️|✗)\s*(?:true\s*tone|trutone|trueton)\b/i
   ]);
   const trueToneYes = anyMatch(raw, [
   // This now matches: working, workin, works, work, wrking
-  /\b(?:true\s*tone|trutone)\b\s*(?:[:=\-]|is|:)?\s*(?:work(in|ing|s|)?|wrking|okay|ok|functional|on)\b/i,
-  /\b(?:true\s*tone|trutone)\b[^\n]{0,24}\bface\s*id\b[^\n]{0,24}\b(work(in|ing|s|)?|wrking|okay|ok|functional|gagana|naga\s*gana)\b/i,
-  /\bface\s*id\b[^\n]{0,24}\b(?:and|&)?\b[^\n]{0,12}\b(?:true\s*tone|trutone)\b[^\n]{0,24}\b(work(in|ing|s|)?|wrking|okay|ok|functional|gagana|naga\s*gana)\b/i,
-  /\b(with|w\/|may)\s*(?:true\s*tone|trutone)\b/i,
-  /\b(?:true\s*tone|trutone)\b[^\n]{0,12}(?:✅|✔️|☑️)/i,
-  /(?:✅|✔️|☑️)\s*(?:true\s*tone|trutone)\b/i
+  /\b(?:true\s*tone|trutone|trueton)\b\s*(?:[:=\-]|is|:)?\s*(?:work(in|ing|s|)?|wrking|okay|ok|functional|on)\b/i,
+  /\b(?:work(in|ing|s|)?|wrking|okay|ok|functional|on)\b[^\n]{0,12}\b(?:true\s*tone|trutone|trueton)\b/i,
+  /\b(?:all\s*)?working\b[^\n]{0,24}\b(?:true\s*tone|trutone|trueton)\b/i,
+  /\b(?:all\s*working|allworking)\b[^\n]{0,24}\b(?:true\s*tone|trutone|trueton)\b/i,
+  /\b(?:true\s*tone|trutone|trueton)\b[^\n]{0,24}\bface\s*id\b[^\n]{0,24}\b(work(in|ing|s|)?|wrking|okay|ok|functional|gagana|naga\s*gana)\b/i,
+  /\bface\s*id\b[^\n]{0,24}\b(?:and|&)?\b[^\n]{0,12}\b(?:true\s*tone|trutone|trueton)\b[^\n]{0,24}\b(work(in|ing|s|)?|wrking|okay|ok|functional|gagana|naga\s*gana)\b/i,
+  /\b(?:work(in|ing|s|)?|wrking|okay|ok|functional|gagana|naga\s*gana)\b[^\n]{0,24}\b(?:true\s*tone|trutone|trueton)\b[^\n]{0,24}\bface\s*id\b/i,
+  /\b(with|w\/|may)\s*(?:true\s*tone|trutone|trueton)\b/i,
+  /\b(?:true\s*tone|trutone|trueton)\b[^\n]{0,12}(?:✅|✔️|☑️)/i,
+  /(?:✅|✔️|☑️)\s*(?:true\s*tone|trutone|trueton)\b/i
 ]);
   const trueToneMissing = !!trueToneNo;
   const trueToneWorking = !trueToneNo && !!trueToneYes;
@@ -296,6 +323,8 @@ function detectIssues(text) {
   const backGlassCracked = anyMatch(raw, [
     /\bcrack(?:ed)?\b[^\n]{0,24}\bback\s*glass\b/i,
     /\bback\s*glass\b[^\n]{0,24}\bcrack(?:ed)?\b/i,
+    /\bcracked\s+back\s*glass\b/i,
+    /\bcracked\s+backglass\b/i,
     /\bbackglass\b[^\n]{0,24}\bcrack(?:ed)?\b/i,
     /\bbasag\b[^\n]{0,24}\bback\s*glass\b/i,
     /\bback\s*glass\b[^\n]{0,24}\bbasag\b/i
@@ -329,6 +358,12 @@ function detectIssues(text) {
     /\b(globe|smart|tnt)\b[^\n]{0,18}\bonly\s*sim\b/i.test(s) ||
     /\bsmart\s*tnt\b[^\n]{0,18}\bonly\b/i.test(s);
 
+  const wifiOnly = anyMatch(raw, [
+    /\bwi[-\s]?fi\b[^\n]{0,16}\bonly\b/i,
+    /\bwi[-\s]?fi\b[^\n]{0,16}\buse\s*only\b/i,
+    /\bwi[-\s]?fi\b[^\n]{0,16}\blang\b/i
+  ]);
+
   const batteryReplaced = anyMatch(raw, [
     /\bbattery\b[^\n]{0,24}\b(replace|replaced|replacement|palit|pinalitan)\b/i,
     /\b(replace|replaced|replacement|palit|pinalitan)\b[^\n]{0,24}\bbattery\b/i
@@ -345,7 +380,8 @@ function detectIssues(text) {
     battery_replaced: !!batteryReplaced,
     camera_issue: !!cameraIssue,
     screen_issue: !!screenIssue,
-    network_locked: !!networkLocked
+    network_locked: !!networkLocked,
+    wifi_only: !!wifiOnly
   };
 }
 
@@ -468,7 +504,7 @@ async function main() {
     const modelFamily = parseModelFamily(text);
     if (!modelFamily) continue;
 
-    const variant = parseVariant(text);
+    const variant = parseVariant(text, modelFamily);
     const storageGb = parseStorageGb(text);
     const batteryHealth = parseBatteryHealth(text);
     const openline = parseOpenline(text);
@@ -498,6 +534,7 @@ async function main() {
       camera_issue: issues.camera_issue || null,
       screen_issue: issues.screen_issue || null,
       network_locked: issues.network_locked || null,
+      wifi_only: issues.wifi_only || null,
       no_description: noDescription || null
     };
 
@@ -593,7 +630,8 @@ async function main() {
       c.risk_flags?.screen_issue ||
       c.risk_flags?.camera_issue ||
       c.risk_flags?.lcd_replaced ||
-      c.risk_flags?.network_locked
+      c.risk_flags?.network_locked ||
+      c.risk_flags?.wifi_only
     );
     const hasMinorIssue = !!(
       c.risk_flags?.trutone_missing ||
@@ -647,6 +685,7 @@ async function main() {
         if (c.risk_flags?.camera_issue) reasons.push("⚠️ Camera issue detected (score capped to C)");
         if (c.risk_flags?.lcd_replaced) reasons.push("⚠️ LCD replaced (score capped to C)");
         if (c.risk_flags?.network_locked) reasons.push("⚠️ Network-locked (Globe/Smart/SIM lock) (score capped to C)");
+        if (c.risk_flags?.wifi_only) reasons.push("⚠️ WiFi-only (no cellular) (score capped to C)");
       } else if (hasMinorIssue) {
         if (c.risk_flags?.trutone_missing) reasons.push("⚠️ TrueTone missing (score capped to B)");
         if (c.risk_flags?.back_glass_replaced) reasons.push("⚠️ Back glass replaced (score capped to B)");
