@@ -176,7 +176,6 @@ export async function fetchPrivateListing(listingId: string) {
         last_seen_at: raw.last_seen_at ?? null,
         last_price_change_at: raw.last_price_change_at ?? null,
         updated_at: raw.updated_at ?? null,
-
         deal_score: deal?.deal_score ?? null,
         below_market_pct: deal?.below_market_pct ?? null,
         confidence: deal?.confidence ?? null,

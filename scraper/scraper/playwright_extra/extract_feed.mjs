@@ -38,12 +38,109 @@ function isLikelyMarketplaceResponse(url, contentType) {
   return lowerType.includes("application/json") && (lowerUrl.includes("graphql") || lowerUrl.includes("marketplace"));
 }
 
+function tryParseJsonLines(text) {
+  const lines = String(text || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return null;
+  let found = false;
+  for (const line of lines) {
+    if (!(line.startsWith("{") || line.startsWith("["))) continue;
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed && typeof parsed === "object") {
+        found = true;
+        return parsed;
+      }
+    } catch {
+      // Ignore parse errors for individual lines.
+    }
+  }
+  return found ? null : null;
+}
+
+export function parseJsonishPayload(text) {
+  return safeParseJsonish(text) || tryParseJsonLines(text);
+}
+
+export function collectNetworkListingsFromPayload(payload, outMap = new Map()) {
+  collectNetworkListings(payload, outMap);
+  return outMap;
+}
+
 function safeParseJsonish(text) {
   const raw = String(text || "").trim();
   if (!raw) return null;
-  const cleaned = raw.replace(/^for\s*\(\s*;\s*;\s*\)\s*;\s*/, "").trim();
+  let cleaned = raw.replace(/^for\s*\(\s*;\s*;\s*\)\s*;\s*/, "").trim();
+  cleaned = cleaned.replace(/^\)\]\}',?\s*/i, "").trim();
+  cleaned = cleaned.replace(/^while\s*\(\s*1\s*\)\s*;\s*/i, "").trim();
+
+  const extractFirstJson = (input, startAt = 0) => {
+    const startObj = input.indexOf("{", startAt);
+    const startArr = input.indexOf("[", startAt);
+    let start = -1;
+    if (startObj === -1) start = startArr;
+    else if (startArr === -1) start = startObj;
+    else start = Math.min(startObj, startArr);
+    if (start === -1) return null;
+
+    const stack = [];
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < input.length; i += 1) {
+      const ch = input[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (ch === "\\") {
+          escaped = true;
+          continue;
+        }
+        if (ch === "\"") inString = false;
+        continue;
+      }
+      if (ch === "\"") {
+        inString = true;
+        continue;
+      }
+      if (ch === "{" || ch === "[") {
+        stack.push(ch === "{" ? "}" : "]");
+        continue;
+      }
+      if (ch === "}" || ch === "]") {
+        if (!stack.length || stack[stack.length - 1] !== ch) continue;
+        stack.pop();
+        if (!stack.length) return input.slice(start, i + 1);
+      }
+    }
+    return null;
+  };
+
   try {
     return JSON.parse(cleaned);
+  } catch {}
+
+  const jsonLine = tryParseJsonLines(cleaned);
+  if (jsonLine) return jsonLine;
+
+  const candidates = ["{\"data\"", "{\"payload\"", "{\"errors\"", "{\"label\""];
+  for (const needle of candidates) {
+    const idx = cleaned.indexOf(needle);
+    if (idx === -1) continue;
+    const extracted = extractFirstJson(cleaned, idx);
+    if (!extracted) continue;
+    try {
+      return JSON.parse(extracted);
+    } catch {}
+  }
+
+  const extracted = extractFirstJson(cleaned);
+  if (!extracted) return null;
+  try {
+    return JSON.parse(extracted);
   } catch {
     return null;
   }
@@ -51,59 +148,166 @@ function safeParseJsonish(text) {
 
 function normalizeNetworkListing(node) {
   if (!node || typeof node !== "object") return null;
-  const listing = node.listing && typeof node.listing === "object" ? node.listing : node;
+  const listing =
+    (node.listing && typeof node.listing === "object")
+      ? node.listing
+      : (node.marketplace_listing && typeof node.marketplace_listing === "object")
+        ? node.marketplace_listing
+        : (node.marketplace_listing_renderable && typeof node.marketplace_listing_renderable === "object")
+          ? node.marketplace_listing_renderable
+          : node;
+
   const listingType = cleanText(listing.__typename) || cleanText(node.__typename) || "";
+
+  const pickText = (value) => {
+    if (value == null) return null;
+    if (typeof value === "string" || typeof value === "number") return String(value);
+    if (typeof value !== "object") return null;
+    return (
+      value.text ||
+      value.title ||
+      value.name ||
+      value.value ||
+      value.message?.text ||
+      value.text_with_entities?.text ||
+      value.title_with_entities?.text ||
+      null
+    );
+  };
+
+  const hasMarketplaceSignals = Boolean(
+    listing.marketplace_listing_title ||
+      listing.listing_price ||
+      listing.price ||
+      listing.marketplace_listing_seller ||
+      listing.marketplace_listing_category_name ||
+      listing.marketplace_listing_leaf_vt_category_name ||
+      listing.location?.reverse_geocode ||
+      listing.marketplace_listing_id ||
+      listing.listing_id ||
+      listing.listingId ||
+      listing.marketplace_listing_description
+  );
+
   const allowIdFallback =
     listingType === "GroupCommerceProductItem" ||
-    listingType.toLowerCase().includes("marketplace");
+    listingType.toLowerCase().includes("marketplace") ||
+    hasMarketplaceSignals;
 
   // Marketplace listing id is sometimes `listing_id`, sometimes just `id` on listing objects.
   // Never use the feed-story node's `id` (it contains colon-delimited story metadata).
-  const listingId = listing.listing_id || node.listing_id || (allowIdFallback ? listing.id : null);
+  let listingId =
+    listing.listing_id ||
+    listing.listingId ||
+    listing.marketplace_listing_id ||
+    node.listing_id ||
+    node.listingId ||
+    node.marketplace_listing_id ||
+    null;
+  if (!listingId && allowIdFallback) listingId = listing.id;
+  if (listingId && typeof listingId === "string" && listingId.includes(":")) {
+    const match = listingId.match(/\b\d{6,}\b/);
+    if (match && match[0]) listingId = match[0];
+  }
   if (!listingId) return null;
   const title =
-    listing.marketplace_listing_title ||
-    listing.title ||
-    listing.listing_title ||
-    node.marketplace_listing_title ||
-    node.title ||
+    pickText(listing.marketplace_listing_title) ||
+    pickText(listing.title) ||
+    pickText(listing.listing_title) ||
+    pickText(listing.custom_title) ||
+    pickText(listing.title_with_entities) ||
+    pickText(node.marketplace_listing_title) ||
+    pickText(node.title) ||
+    pickText(node.title_with_entities) ||
     null;
   const description =
-    listing.marketplace_listing_description ||
-    listing.marketplace_description ||
-    listing.description ||
-    node.marketplace_listing_description ||
-    node.description ||
+    pickText(listing.marketplace_listing_description) ||
+    pickText(listing.marketplace_description) ||
+    pickText(listing.description) ||
+    pickText(listing.description_with_entities) ||
+    pickText(listing.description_text) ||
+    pickText(node.marketplace_listing_description) ||
+    pickText(node.description) ||
     null;
-  const priceObj = listing.listing_price || listing.price || node.listing_price || node.price || null;
-  let priceRaw = null;
+  const toNumber = (value) => {
+    if (value == null) return null;
+    const n = Number.parseFloat(String(value).replace(/,/g, ""));
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const priceObj =
+    listing.listing_price ||
+    listing.marketplace_listing_price ||
+    listing.price ||
+    listing.price_info ||
+    listing.marketplace_listing_price_info ||
+    node.listing_price ||
+    node.marketplace_listing_price ||
+    node.price ||
+    null;
+  let listingPriceFormatted = null;
+  let listingPriceAmount = null;
   if (priceObj && typeof priceObj === "object") {
-    priceRaw =
+    listingPriceFormatted =
       priceObj.formatted_amount ||
       priceObj.formatted_amount_with_symbols ||
       priceObj.formatted_amount_without_currency ||
       priceObj.formatted_price ||
       null;
-    if (!priceRaw && priceObj.amount && priceObj.currency) {
-      priceRaw = `${priceObj.currency} ${priceObj.amount}`;
+    listingPriceAmount = toNumber(priceObj.amount);
+    if (!listingPriceFormatted && priceObj.amount && priceObj.currency) {
+      listingPriceFormatted = `${priceObj.currency} ${priceObj.amount}`;
     }
   } else if (typeof priceObj === "string" || typeof priceObj === "number") {
-    priceRaw = String(priceObj);
+    listingPriceFormatted = String(priceObj);
   }
 
-  // If we can't see a price at all, it's very likely not a listing card node (avoid false positives like profile ids).
-  if (!cleanText(priceRaw)) return null;
+  const strikeObj =
+    listing.strikethrough_price ||
+    listing.marketplace_listing_strikethrough_price ||
+    node.strikethrough_price ||
+    node.marketplace_listing_strikethrough_price ||
+    null;
+  let listingStrikeFormatted = null;
+  if (strikeObj && typeof strikeObj === "object") {
+    listingStrikeFormatted =
+      strikeObj.formatted_amount ||
+      strikeObj.formatted_amount_with_symbols ||
+      strikeObj.formatted_amount_without_currency ||
+      strikeObj.formatted_price ||
+      null;
+    if (!listingStrikeFormatted && strikeObj.amount && strikeObj.currency) {
+      listingStrikeFormatted = `${strikeObj.currency} ${strikeObj.amount}`;
+    }
+  } else if (typeof strikeObj === "string" || typeof strikeObj === "number") {
+    listingStrikeFormatted = String(strikeObj);
+  }
+
+  // If we can't see a price at all, only allow it when it still looks like a marketplace listing.
+  const priceRaw = cleanText(listingPriceFormatted);
+  const pricePhp =
+    listingPriceAmount != null
+      ? listingPriceAmount
+      : listingPriceFormatted
+        ? parsePhpPrice(listingPriceFormatted)
+        : null;
+
+  if (!cleanText(priceRaw) && pricePhp == null && !hasMarketplaceSignals) return null;
 
   const locationObj =
     listing.location ||
     listing.location_text ||
     listing.location_name ||
     listing.location_info ||
+    listing.listing_location ||
     node.location ||
     node.location_text ||
     node.location_name ||
+    node.listing_location ||
     null;
   let locationRaw = null;
+  let locationCity = null;
+  let locationState = null;
   if (typeof locationObj === "string") locationRaw = locationObj;
   if (locationObj && typeof locationObj === "object") {
     locationRaw =
@@ -113,19 +317,78 @@ function normalizeNetworkListing(node) {
       locationObj.name ||
       locationObj.city ||
       null;
+
+    const reverse = locationObj.reverse_geocode || null;
+    if (reverse && typeof reverse === "object") {
+      locationCity = reverse.city || null;
+      locationState = reverse.state || null;
+      const displayName = reverse.city_page?.display_name || null;
+      if (!locationRaw && displayName) locationRaw = displayName;
+      if (!locationRaw && locationCity && locationState) locationRaw = `${locationCity}, ${locationState}`;
+    }
   }
 
+  const sellerId =
+    listing.marketplace_listing_seller?.id ||
+    listing.seller?.id ||
+    listing.seller_id ||
+    null;
+
+  let isLive = typeof listing.is_live === "boolean" ? listing.is_live : null;
+  let isSold = typeof listing.is_sold === "boolean" ? listing.is_sold : null;
+  let isPending = typeof listing.is_pending === "boolean" ? listing.is_pending : null;
+  let isHidden = typeof listing.is_hidden === "boolean" ? listing.is_hidden : null;
+
+  const statusText = cleanText(listing.listing_status || listing.availability || listing.status || listing.state);
+  if (statusText) {
+    if (isSold == null && /sold/i.test(statusText)) isSold = true;
+    if (isPending == null && /pending/i.test(statusText)) isPending = true;
+    if (isHidden == null && /(hidden|unavailable|removed)/i.test(statusText)) isHidden = true;
+    if (isLive == null && /(active|live|available)/i.test(statusText)) isLive = true;
+  }
+
+  let listingStatus = "active";
+  if (isSold) listingStatus = "sold";
+  else if (isPending || isHidden || isLive === false) listingStatus = "unavailable";
+
   const url = canonicalMarketplaceItemUrl(String(listingId), String(listingId));
-  return {
+  const normalized = {
     listing_id: String(listingId),
     url,
     title: sanitizeTitle(title),
     description: cleanText(description),
     location_raw: cleanText(locationRaw),
     price_raw: cleanText(priceRaw),
-    price_php: parsePhpPrice(priceRaw),
-    listing_status: "active"
+    price_php: pricePhp,
+    listing_status: listingStatus,
+    listing_price_amount: listingPriceAmount,
+    listing_price_formatted: cleanText(listingPriceFormatted),
+    listing_strikethrough_price: cleanText(listingStrikeFormatted),
+    listing_is_live: isLive,
+    listing_is_sold: isSold,
+    listing_is_pending: isPending,
+    listing_is_hidden: isHidden,
+    listing_seller_id: cleanText(sellerId),
+    listing_location_city: cleanText(locationCity),
+    listing_location_state: cleanText(locationState)
   };
+
+  const filledSignals =
+    cleanText(normalized.title) ||
+    cleanText(normalized.description) ||
+    normalized.listing_price_amount != null ||
+    cleanText(normalized.listing_price_formatted) ||
+    cleanText(normalized.listing_strikethrough_price) ||
+    normalized.listing_is_live != null ||
+    normalized.listing_is_sold != null ||
+    normalized.listing_is_pending != null ||
+    normalized.listing_is_hidden != null ||
+    cleanText(normalized.listing_seller_id) ||
+    cleanText(normalized.listing_location_city) ||
+    cleanText(normalized.listing_location_state);
+
+  if (!filledSignals && !hasMarketplaceSignals) return null;
+  return normalized;
 }
 
 function collectNetworkListings(payload, outMap) {
@@ -250,13 +513,14 @@ async function extractFromDom(page, { maxCards, scrollPages, scrollDelayMs, runI
   return { rows: Array.from(seen.values()), cardsSeen: rawRows.length, dupListingIdsSkipped };
 }
 
-export function installNetworkListingCollector(page, { log, saveNetworkRaw }) {
+export function installNetworkListingCollector(page, { log, saveNetworkRaw, runId }) {
   const networkPayloads = [];
   const networkListings = new Map();
   let networkCandidates = 0;
   let networkJsonResponses = 0;
   let firstParsed = null;
   let networkDebugLogged = 0;
+  let htmlSampleSaved = false;
 
   const pending = new Set();
 
@@ -285,6 +549,39 @@ export function installNetworkListingCollector(page, { log, saveNetworkRaw }) {
         const text = await response.text();
         const data = safeParseJsonish(text);
         if (!data) {
+          const jsonLine = tryParseJsonLines(text);
+          if (jsonLine) {
+            networkJsonResponses += 1;
+            if (!firstParsed) firstParsed = { url, data: jsonLine };
+            if (saveNetworkRaw && networkPayloads.length < 50) {
+              networkPayloads.push({ url, data: jsonLine });
+            }
+            const networkMap = new Map();
+            collectNetworkListings(jsonLine, networkMap);
+            for (const [key, value] of networkMap.entries()) {
+              if (!networkListings.has(key)) networkListings.set(key, value);
+            }
+            return;
+          }
+          const shouldSaveHtml =
+            !htmlSampleSaved &&
+            (saveNetworkRaw || networkDebugEnabled) &&
+            String(contentType || "").toLowerCase().includes("text/html");
+          if (shouldSaveHtml) {
+            try {
+              const logsDir = path.resolve("logs");
+              fs.mkdirSync(logsDir, { recursive: true });
+              const safeRunId = cleanText(runId) || "unknown";
+              const target = path.join(logsDir, `graphql-html-${safeRunId}.html`);
+              const trimmed = String(text || "");
+              const payload = trimmed.length > 20000 ? trimmed.slice(0, 20000) : trimmed;
+              fs.writeFileSync(target, payload);
+              htmlSampleSaved = true;
+              log?.(
+                `[WARN] graphql_html_saved path=${target} bytes=${payload.length} content_type=${String(contentType).slice(0, 60)}`
+              );
+            } catch {}
+          }
           if (networkDebugEnabled) {
             const status = response.status();
             const preview = cleanText(text)?.slice(0, 120) || "n/a";
@@ -328,8 +625,25 @@ export function installNetworkListingCollector(page, { log, saveNetworkRaw }) {
     }
   }
 
+  function dispose() {
+    try {
+      page.off("response", onResponse);
+    } catch {}
+  }
+
+  function clear() {
+    networkPayloads.length = 0;
+    networkListings.clear();
+    networkCandidates = 0;
+    networkJsonResponses = 0;
+    firstParsed = null;
+    htmlSampleSaved = false;
+  }
+
   return {
     flush,
+    clear,
+    dispose,
     getState() {
       return {
         networkPayloads,
@@ -353,11 +667,12 @@ export async function extractDiscoveryRows(page, opts) {
     runId,
     logEnabled,
     log,
-    networkCollector
+    networkCollector,
+    graphqlOnly
   } = opts;
 
   const effectiveCollector = useNetwork
-    ? networkCollector || installNetworkListingCollector(page, { log, saveNetworkRaw })
+    ? networkCollector || installNetworkListingCollector(page, { log, saveNetworkRaw, runId })
     : null;
 
   try {
@@ -404,6 +719,13 @@ export async function extractDiscoveryRows(page, opts) {
   const seenInRun = new Set();
   const scrapedAt = new Date().toISOString();
 
+  if (graphqlOnly && !useNetwork) {
+    if (logEnabled) {
+      log?.("[WARN] discovery_graphql_only enabled but SCRAPE_USE_NETWORK=false; returning 0 rows.");
+    }
+    return { rows: [], cardsSeen: 0, dupListingIdsSkipped: 0 };
+  }
+
   if (useNetwork) {
     // Network-first: scroll to trigger GraphQL payloads, then fall back to DOM to top-up.
     const totalPasses = Math.max(0, scrollPages) + 1;
@@ -416,13 +738,38 @@ export async function extractDiscoveryRows(page, opts) {
     if (finalWaitMs) await sleep(finalWaitMs);
     await effectiveCollector?.flush(Math.max(500, finalWaitMs * 3));
 
-    const state = effectiveCollector?.getState() || {
+    let state = effectiveCollector?.getState() || {
       networkPayloads: [],
       networkListings: new Map(),
       networkCandidates: 0,
       networkJsonResponses: 0,
       firstParsed: null
     };
+
+    const pokeCount = Math.max(0, envInt("SCRAPE_NETWORK_POKE_COUNT", 2));
+    const pokeWaitMs = Math.max(200, envInt("SCRAPE_NETWORK_POKE_WAIT_MS", 1200));
+    if (pokeCount && state.networkListings.size === 0 && effectiveCollector) {
+      for (let attempt = 1; attempt <= pokeCount; attempt += 1) {
+        if (logEnabled) log(`[INFO] network_poke attempt=${attempt}/${pokeCount} reason=no_listings`);
+        try {
+          await page.evaluate(() => {
+            window.scrollBy(0, Math.floor(window.innerHeight * 0.7));
+          });
+        } catch {}
+        try {
+          await page.waitForResponse((response) => {
+            const url = response.url();
+            if (!url.includes("graphql")) return false;
+            const contentType = response.headers()["content-type"] || "";
+            return /json|javascript|text\/plain/i.test(contentType);
+          }, { timeout: pokeWaitMs });
+        } catch {}
+        await sleep(Math.min(1200, Math.max(0, scrollDelayMs || 0)));
+        await effectiveCollector.flush(Math.max(500, pokeWaitMs * 2));
+        state = effectiveCollector.getState();
+        if (state.networkListings.size > 0) break;
+      }
+    }
 
     const fromNetworkAll = Array.from(state.networkListings.values()).map((row) => ({
       ...row,
@@ -470,7 +817,7 @@ export async function extractDiscoveryRows(page, opts) {
       } catch {}
     }
 
-    if (merged.size < maxCards) {
+    if (!graphqlOnly && merged.size < maxCards) {
       const remaining = maxCards - merged.size;
       // If network yields few items, go back to the top so DOM extraction can re-scan visible cards.
       if (merged.size < Math.max(1, Math.floor(maxCards * 0.6))) {
@@ -495,7 +842,7 @@ export async function extractDiscoveryRows(page, opts) {
     }
 
     // Overlay DOM prices when network JSON is stale (prefer first price seen on card).
-    if (merged.size && useNetwork) {
+    if (!graphqlOnly && merged.size && useNetwork) {
       try {
         await page.evaluate(() => window.scrollTo(0, 0));
         await sleep(Math.min(1200, Math.max(0, scrollDelayMs)));

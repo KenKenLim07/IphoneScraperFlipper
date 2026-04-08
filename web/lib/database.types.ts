@@ -171,9 +171,19 @@ export type Database = {
           description: string | null
           first_seen_at: string
           id: number
+          listing_is_hidden: boolean | null
+          listing_is_live: boolean | null
+          listing_is_pending: boolean | null
+          listing_is_sold: boolean | null
           last_price_change_at: string | null
           last_seen_at: string
           listing_id: string
+          listing_location_city: string | null
+          listing_location_state: string | null
+          listing_price_amount: number | null
+          listing_price_formatted: string | null
+          listing_seller_id: string | null
+          listing_strikethrough_price: string | null
           location_raw: string | null
           posted_at: string | null
           price_php: number | null
@@ -189,9 +199,19 @@ export type Database = {
           description?: string | null
           first_seen_at?: string
           id?: number
+          listing_is_hidden?: boolean | null
+          listing_is_live?: boolean | null
+          listing_is_pending?: boolean | null
+          listing_is_sold?: boolean | null
           last_price_change_at?: string | null
           last_seen_at?: string
           listing_id: string
+          listing_location_city?: string | null
+          listing_location_state?: string | null
+          listing_price_amount?: number | null
+          listing_price_formatted?: string | null
+          listing_seller_id?: string | null
+          listing_strikethrough_price?: string | null
           location_raw?: string | null
           posted_at?: string | null
           price_php?: number | null
@@ -207,9 +227,19 @@ export type Database = {
           description?: string | null
           first_seen_at?: string
           id?: number
+          listing_is_hidden?: boolean | null
+          listing_is_live?: boolean | null
+          listing_is_pending?: boolean | null
+          listing_is_sold?: boolean | null
           last_price_change_at?: string | null
           last_seen_at?: string
           listing_id?: string
+          listing_location_city?: string | null
+          listing_location_state?: string | null
+          listing_price_amount?: number | null
+          listing_price_formatted?: string | null
+          listing_seller_id?: string | null
+          listing_strikethrough_price?: string | null
           location_raw?: string | null
           posted_at?: string | null
           price_php?: number | null

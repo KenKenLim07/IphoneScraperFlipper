@@ -197,7 +197,9 @@ export default async function Home({
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium leading-snug">{row.public_title}</div>
+                        <div className="flex flex-wrap items-center gap-2 text-sm font-medium leading-snug">
+                          <span>{row.public_title}</span>
+                        </div>
                         <div className="mt-1 text-xs text-muted-foreground">
                           {row.location_raw || "—"}
                         </div>
@@ -269,12 +271,14 @@ export default async function Home({
                         return (
                       <TableRow key={row.listing_id}>
                         <TableCell className="min-w-[320px] max-w-[420px]">
-                          <Link
-                          href={`/item/${encodeURIComponent(row.listing_id)}`}
-                          className="font-medium hover:underline hover:underline-offset-4"
-                        >
-                          {row.public_title}
-                        </Link>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Link
+                              href={`/item/${encodeURIComponent(row.listing_id)}`}
+                              className="font-medium hover:underline hover:underline-offset-4"
+                            >
+                              {row.public_title}
+                            </Link>
+                          </div>
                         <div className="mt-1 font-mono text-[11px] text-muted-foreground">
                           id={row.listing_id}
                         </div>

@@ -2,7 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-import { fetchExistingListingIds, persistDiscoveryInsertOnlyBatched, persistToDatabaseBatched } from "./db.mjs";
+import {
+  fetchExistingListingIds,
+  persistDiscoveryInsertOnlyBatched,
+  persistDiscoveryNetworkUpdateBatched,
+  persistToDatabaseBatched
+} from "./db.mjs";
 import { extractDiscoveryRows, installNetworkListingCollector } from "./extract_feed.mjs";
 import { looksLikeLoginOrBlock } from "./fb_checks.mjs";
 import { fetchWatchlistCandidates, recheckCandidatesChunk } from "./monitor.mjs";
@@ -131,7 +136,8 @@ export async function runDiscoveryJob({
       runId,
       logEnabled: cfg.logEnabled,
       log,
-      networkCollector
+      networkCollector,
+      graphqlOnly: cfg.discoveryGraphqlOnly
     });
 
     if (writeDiscoveryJson) {
@@ -190,13 +196,17 @@ export async function runDiscoveryJob({
       { log }
     );
     const newRows = filtered.filter((r) => !existingSet.has(String(r.listing_id)));
+    const existingRows = filtered.filter((r) => existingSet.has(String(r.listing_id)));
 
     const skippedExisting = filtered.length - newRows.length;
 
-    const doEnrich = cfg.discoveryEnrichEnabled && newRows.length > 0;
+    const doEnrich = cfg.discoveryEnrichEnabled && !cfg.discoveryGraphqlOnly && newRows.length > 0;
     const chunkSize = Math.max(1, cfg.discoveryEnrichChunkSize || 20);
     const concurrency = Math.max(1, Math.min(cfg.discoveryEnrichConcurrency || 2, 6));
 
+    if (cfg.discoveryGraphqlOnly && cfg.discoveryEnrichEnabled) {
+      log("[INFO] discovery_graphql_only enabled; skipping enrich.");
+    }
     if (doEnrich) {
       log(
         `[INFO] discovery_enrich_start candidates=${newRows.length} concurrency=${concurrency} chunk_size=${chunkSize}`
@@ -205,6 +215,7 @@ export async function runDiscoveryJob({
 
     let inserted = 0;
     let versionsInserted = 0;
+    let updatedExisting = 0;
 
     for (let i = 0; i < newRows.length; i += chunkSize) {
       const chunk = newRows.slice(i, i + chunkSize);
@@ -239,9 +250,17 @@ export async function runDiscoveryJob({
       versionsInserted += res.versionsInserted;
     }
 
+    if (cfg.discoveryUpdateExistingGraphql && existingRows.length) {
+      const res = await persistDiscoveryNetworkUpdateBatched(existingRows, { phase: "discovery_update", runId, log });
+      updatedExisting = res.updated;
+      log(
+        `[INFO] discovery_update_existing total=${existingRows.length} updated=${res.updated} skipped=${res.skipped}`
+      );
+    }
+
     log(
       `[INFO] results phase=discovery cards_found=${extracted.cardsSeen} inserted=${inserted} skipped_existing=${skippedExisting} ` +
-        `listings_updated=0 versions_inserted=${versionsInserted}`
+        `listings_updated=${updatedExisting} versions_inserted=${versionsInserted}`
     );
 
     return {
@@ -303,12 +322,18 @@ export async function runMonitorJob({
     `[INFO] monitor_start limit=${finalLimit} mode=oldest concurrency=${cfg.watchlistConcurrency} ` +
       `chunk_size=${cfg.watchlistChunkSize} candidates=${candidatesCount}`
   );
+  log?.(`[INFO] monitor_network enabled=${cfg.monitorUseNetwork ? "true" : "false"}`);
 
   const rows = [];
   const size = Math.max(1, cfg.watchlistChunkSize || 20);
   let totalUpdated = 0;
   let totalVersions = 0;
   const totalFieldCounts = Object.create(null);
+  let networkHitCount = 0;
+  let embedHitCount = 0;
+  let noneHitCount = 0;
+  let embedCheckedTotal = 0;
+  let embedMatchedTotal = 0;
   const logChanges = envBool("DB_LOG_CHANGES", false);
   const changeSamples = [];
   const changeLimit = Math.max(0, Number.parseInt(process.env.DB_LOG_CHANGE_LIMIT || "25", 10) || 25);
@@ -332,11 +357,21 @@ export async function runMonitorJob({
         label: "monitor",
         blockImages: cfg.monitorBlockImages,
         waitForNetworkIdle: cfg.monitorWaitForNetworkIdle,
+        useNetwork: cfg.monitorUseNetwork,
+        saveNetworkRaw: cfg.saveNetworkRaw,
         progressBase: i,
         progressTotal: candidates.length
       });
 
       rows.push(...out);
+      for (const row of out) {
+        const source = row?._monitor_network_source || "none";
+        if (source === "network") networkHitCount += 1;
+        else if (source === "embed") embedHitCount += 1;
+        else noneHitCount += 1;
+        embedCheckedTotal += Number(row?._monitor_embed_checked || 0);
+        embedMatchedTotal += Number(row?._monitor_embed_matched || 0);
+      }
 
       if (cfg.dryRun) continue;
       if (!out.length) continue;
@@ -384,6 +419,10 @@ export async function runMonitorJob({
 
   log(
     `[INFO] results phase=monitor rechecked=${candidatesCount} listings_updated=${totalUpdated} versions_inserted=${totalVersions}`
+  );
+  log(
+    `[INFO] monitor_sources network=${networkHitCount} embed=${embedHitCount} none=${noneHitCount} ` +
+      `embed_checked=${embedCheckedTotal} embed_matched=${embedMatchedTotal}`
   );
   const counts = formatCounts(totalFieldCounts);
   if (counts) log(`[INFO] db_change_counts ${counts}`);

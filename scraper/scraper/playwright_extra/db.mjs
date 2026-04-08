@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 
-import { cleanText, envBool, envInt, isWeakDescription, normalizeLocationRaw } from "./utils.mjs";
+import { cleanText, envBool, envInt, isWeakDescription, normalizeLocationRaw, parsePhpPrice } from "./utils.mjs";
 
 function createSupabaseClient() {
   const url = cleanText(process.env.SUPABASE_URL);
@@ -29,6 +29,104 @@ async function withRetry(fn, { retries, baseDelayMs, log, label }) {
     }
   }
   throw lastError;
+}
+
+function toNumber(value) {
+  if (value == null) return null;
+  const n = Number.parseFloat(String(value).replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+function boolOrNull(value) {
+  return typeof value === "boolean" ? value : null;
+}
+
+function inferLocationCityStateFromRaw(locationRaw) {
+  const cleaned = cleanText(locationRaw);
+  if (!cleaned) return { city: null, state: null };
+  const match = cleaned.match(/^(.+?),\s*(PH-\d{2})$/i);
+  if (match) return { city: cleanText(match[1]), state: cleanText(match[2]) };
+  const parts = cleaned
+    .split(",")
+    .map((part) => cleanText(part))
+    .filter(Boolean);
+  if (parts.length >= 2) return { city: parts[0], state: null };
+  return { city: null, state: null };
+}
+
+function buildDiscoveryNetworkUpdate(row, nowIso) {
+  const listingId = cleanText(row?.listing_id);
+  if (!listingId) return null;
+  const url = cleanText(row?.url);
+  if (!url) return null;
+
+  const payload = { listing_id: listingId, url };
+  let hasField = false;
+
+  const priceAmount = toNumber(row.listing_price_amount);
+  if (priceAmount != null) {
+    payload.listing_price_amount = priceAmount;
+    hasField = true;
+  }
+
+
+  const priceFormatted = cleanText(row.listing_price_formatted);
+  if (priceFormatted) {
+    payload.listing_price_formatted = priceFormatted;
+    hasField = true;
+  }
+
+  const strike = cleanText(row.listing_strikethrough_price);
+  if (strike) {
+    payload.listing_strikethrough_price = strike;
+    hasField = true;
+  }
+
+  const isLive = boolOrNull(row.listing_is_live);
+  if (isLive != null) {
+    payload.listing_is_live = isLive;
+    hasField = true;
+  }
+
+  const isSold = boolOrNull(row.listing_is_sold);
+  if (isSold != null) {
+    payload.listing_is_sold = isSold;
+    hasField = true;
+  }
+
+  const isPending = boolOrNull(row.listing_is_pending);
+  if (isPending != null) {
+    payload.listing_is_pending = isPending;
+    hasField = true;
+  }
+
+  const isHidden = boolOrNull(row.listing_is_hidden);
+  if (isHidden != null) {
+    payload.listing_is_hidden = isHidden;
+    hasField = true;
+  }
+
+  const sellerId = cleanText(row.listing_seller_id);
+  if (sellerId) {
+    payload.listing_seller_id = sellerId;
+    hasField = true;
+  }
+
+  const locationCity = cleanText(row.listing_location_city);
+  if (locationCity) {
+    payload.listing_location_city = locationCity;
+    hasField = true;
+  }
+
+  const locationState = cleanText(row.listing_location_state);
+  if (locationState) {
+    payload.listing_location_state = locationState;
+    hasField = true;
+  }
+
+  if (!hasField) return null;
+  payload.updated_at = nowIso;
+  return payload;
 }
 
 export function savePendingRows({ runId, phase, rows, error, log }) {
@@ -65,7 +163,7 @@ export async function persistToDatabase(rows, { log } = {}) {
       supabase
         .from("listings")
         .select(
-          "id,listing_id,title,description,condition_raw,location_raw,price_raw,price_php,status,posted_at,first_seen_at,last_seen_at,last_price_change_at"
+          "id,listing_id,title,description,condition_raw,location_raw,price_raw,price_php,status,posted_at,first_seen_at,last_seen_at,last_price_change_at,listing_price_amount,listing_price_formatted,listing_strikethrough_price,listing_is_live,listing_is_sold,listing_is_pending,listing_is_hidden,listing_seller_id,listing_location_city,listing_location_state"
         )
         .in("listing_id", listingIds),
     { retries, baseDelayMs, log, label: "db_existing_select" }
@@ -97,6 +195,36 @@ export async function persistToDatabase(rows, { log } = {}) {
     let nextLocationRaw = normalizeLocationRaw(row.location_raw);
     let nextPriceRaw = row.price_raw;
     let nextPricePhp = row.price_php;
+    const incomingPriceAmount = toNumber(row.listing_price_amount);
+    const incomingPriceFormatted = cleanText(row.listing_price_formatted);
+    const incomingStrike = cleanText(row.listing_strikethrough_price);
+    const incomingIsLive = typeof row.listing_is_live === "boolean" ? row.listing_is_live : null;
+    const incomingIsSold = typeof row.listing_is_sold === "boolean" ? row.listing_is_sold : null;
+    const incomingIsPending = typeof row.listing_is_pending === "boolean" ? row.listing_is_pending : null;
+    const incomingIsHidden = typeof row.listing_is_hidden === "boolean" ? row.listing_is_hidden : null;
+    const incomingSellerId = cleanText(row.listing_seller_id);
+    const incomingLocationCity = cleanText(row.listing_location_city);
+    const incomingLocationState = cleanText(row.listing_location_state);
+
+    let nextListingPriceAmount = incomingPriceAmount;
+    let nextListingPriceFormatted = incomingPriceFormatted;
+    let nextListingStrike = incomingStrike;
+    let nextListingIsLive = incomingIsLive;
+    let nextListingIsSold = incomingIsSold;
+    let nextListingIsPending = incomingIsPending;
+    let nextListingIsHidden = incomingIsHidden;
+    let nextListingSellerId = incomingSellerId;
+    let nextListingLocationCity = incomingLocationCity;
+    let nextListingLocationState = incomingLocationState;
+
+    if (!cleanText(nextPriceRaw) && incomingPriceFormatted) {
+      nextPriceRaw = incomingPriceFormatted;
+    }
+    if (incomingPriceAmount != null) {
+      nextPricePhp = incomingPriceAmount;
+    } else if ((nextPricePhp == null || !Number.isFinite(nextPricePhp)) && incomingPriceFormatted) {
+      nextPricePhp = parsePhpPrice(incomingPriceFormatted);
+    }
 
     if (existing) {
       if (isWeakDescription(nextDescription) && !isWeakDescription(existing.description)) {
@@ -109,12 +237,50 @@ export async function persistToDatabase(rows, { log } = {}) {
       if (!cleanText(nextLocationRaw) && cleanText(prevLocation)) {
         nextLocationRaw = prevLocation;
       }
+      if (nextListingPriceAmount == null && existing.listing_price_amount != null) {
+        nextListingPriceAmount = existing.listing_price_amount;
+      }
+      if (!cleanText(nextListingPriceFormatted) && cleanText(existing.listing_price_formatted)) {
+        nextListingPriceFormatted = cleanText(existing.listing_price_formatted);
+      }
+      if (!cleanText(nextListingStrike) && cleanText(existing.listing_strikethrough_price)) {
+        nextListingStrike = cleanText(existing.listing_strikethrough_price);
+      }
+      if (nextListingIsLive == null && typeof existing.listing_is_live === "boolean") {
+        nextListingIsLive = existing.listing_is_live;
+      }
+      if (nextListingIsSold == null && typeof existing.listing_is_sold === "boolean") {
+        nextListingIsSold = existing.listing_is_sold;
+      }
+      if (nextListingIsPending == null && typeof existing.listing_is_pending === "boolean") {
+        nextListingIsPending = existing.listing_is_pending;
+      }
+      if (nextListingIsHidden == null && typeof existing.listing_is_hidden === "boolean") {
+        nextListingIsHidden = existing.listing_is_hidden;
+      }
+      if (!cleanText(nextListingSellerId) && cleanText(existing.listing_seller_id)) {
+        nextListingSellerId = cleanText(existing.listing_seller_id);
+      }
+      if (!cleanText(nextListingLocationCity) && cleanText(existing.listing_location_city)) {
+        nextListingLocationCity = cleanText(existing.listing_location_city);
+      }
+    if (!cleanText(nextListingLocationState) && cleanText(existing.listing_location_state)) {
+      nextListingLocationState = cleanText(existing.listing_location_state);
+    }
       if ((nextPricePhp == null || !Number.isFinite(nextPricePhp)) && existing.price_php != null) {
         nextPricePhp = existing.price_php;
         if (!cleanText(nextPriceRaw) && cleanText(existing.price_raw)) {
           nextPriceRaw = existing.price_raw;
         }
       }
+    }
+
+    const fallbackLocation = inferLocationCityStateFromRaw(nextLocationRaw);
+    if (!cleanText(nextListingLocationCity) && cleanText(fallbackLocation.city)) {
+      nextListingLocationCity = fallbackLocation.city;
+    }
+    if (!cleanText(nextListingLocationState) && cleanText(fallbackLocation.state)) {
+      nextListingLocationState = fallbackLocation.state;
     }
 
     const payload = {
@@ -126,6 +292,16 @@ export async function persistToDatabase(rows, { log } = {}) {
       location_raw: nextLocationRaw,
       price_raw: nextPriceRaw,
       price_php: nextPricePhp,
+      listing_price_amount: nextListingPriceAmount,
+      listing_price_formatted: nextListingPriceFormatted,
+      listing_strikethrough_price: nextListingStrike,
+      listing_is_live: nextListingIsLive,
+      listing_is_sold: nextListingIsSold,
+      listing_is_pending: nextListingIsPending,
+      listing_is_hidden: nextListingIsHidden,
+      listing_seller_id: nextListingSellerId,
+      listing_location_city: nextListingLocationCity,
+      listing_location_state: nextListingLocationState,
       status: row.listing_status || "active",
       posted_at: existing?.posted_at || row.posted_at || null,
       updated_at: nowIso,
@@ -297,6 +473,24 @@ export async function persistDiscoveryInsertOnly(rows, { log } = {}) {
 
   const inserts = toInsert.map((row) => {
     const scrapedAt = row.scraped_at || nowIso;
+    const priceAmount = toNumber(row.listing_price_amount);
+    const priceFormatted = cleanText(row.listing_price_formatted);
+    const strike = cleanText(row.listing_strikethrough_price);
+    const isLive = typeof row.listing_is_live === "boolean" ? row.listing_is_live : null;
+    const isSold = typeof row.listing_is_sold === "boolean" ? row.listing_is_sold : null;
+    const isPending = typeof row.listing_is_pending === "boolean" ? row.listing_is_pending : null;
+    const isHidden = typeof row.listing_is_hidden === "boolean" ? row.listing_is_hidden : null;
+    const sellerId = cleanText(row.listing_seller_id);
+    const locationCity = cleanText(row.listing_location_city);
+    const locationState = cleanText(row.listing_location_state);
+
+    let priceRaw = row.price_raw;
+    let pricePhp = row.price_php;
+    if (!cleanText(priceRaw) && priceFormatted) priceRaw = priceFormatted;
+    if (priceAmount != null) pricePhp = priceAmount;
+    else if ((pricePhp == null || !Number.isFinite(pricePhp)) && priceFormatted) {
+      pricePhp = parsePhpPrice(priceFormatted);
+    }
     return {
       listing_id: String(row.listing_id),
       url: row.url,
@@ -304,8 +498,18 @@ export async function persistDiscoveryInsertOnly(rows, { log } = {}) {
       description: row.description,
       condition_raw: cleanText(row.condition_raw),
       location_raw: normalizeLocationRaw(row.location_raw),
-      price_raw: row.price_raw,
-      price_php: row.price_php,
+      price_raw: priceRaw,
+      price_php: pricePhp,
+      listing_price_amount: priceAmount,
+      listing_price_formatted: priceFormatted,
+      listing_strikethrough_price: strike,
+      listing_is_live: isLive,
+      listing_is_sold: isSold,
+      listing_is_pending: isPending,
+      listing_is_hidden: isHidden,
+      listing_seller_id: sellerId,
+      listing_location_city: locationCity,
+      listing_location_state: locationState,
       status: row.listing_status || "active",
       posted_at: row.posted_at || null,
       first_seen_at: scrapedAt,
@@ -376,6 +580,38 @@ export async function persistDiscoveryInsertOnly(rows, { log } = {}) {
   return { inserted, updated: 0, unchanged: 0, existing, versionsInserted };
 }
 
+export async function persistDiscoveryNetworkUpdate(rows, { log } = {}) {
+  const input = dedupeRowsByListingId(rows);
+  if (!input.length) {
+    return { updated: 0, skipped: 0 };
+  }
+
+  const retries = envInt("DB_RETRY_COUNT", 3);
+  const baseDelayMs = envInt("DB_RETRY_BASE_MS", 1500);
+  const supabase = createSupabaseClient();
+  const nowIso = new Date().toISOString();
+
+  const updates = [];
+  for (const row of input) {
+    const payload = buildDiscoveryNetworkUpdate(row, nowIso);
+    if (payload) updates.push(payload);
+  }
+
+  if (!updates.length) {
+    return { updated: 0, skipped: input.length };
+  }
+
+  const res = await withRetry(
+    () => supabase.from("listings").upsert(updates, { onConflict: "listing_id" }),
+    { retries, baseDelayMs, log, label: "db_listings_update_discovery_network" }
+  );
+  if (res.error) {
+    throw new Error(`DB listings update failed: ${res.error.message}`);
+  }
+
+  return { updated: updates.length, skipped: input.length - updates.length };
+}
+
 export async function persistToDatabaseBatched(rows, { phase, runId, log } = {}) {
   const batchSize = Math.max(1, envInt("DB_BATCH_SIZE", 25));
   const out = {
@@ -428,6 +664,26 @@ export async function persistDiscoveryInsertOnlyBatched(rows, { phase, runId, lo
       out.unchanged += res.unchanged;
       out.existing += res.existing;
       out.versionsInserted += res.versionsInserted;
+    } catch (error) {
+      if (phase && runId) {
+        savePendingRows({ runId, phase, rows: rows.slice(i), error, log });
+      }
+      throw error;
+    }
+  }
+  return out;
+}
+
+export async function persistDiscoveryNetworkUpdateBatched(rows, { phase, runId, log } = {}) {
+  const batchSize = Math.max(1, envInt("DB_BATCH_SIZE", 25));
+  const out = { updated: 0, skipped: 0 };
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const batch = rows.slice(i, i + batchSize);
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await persistDiscoveryNetworkUpdate(batch, { log });
+      out.updated += res.updated;
+      out.skipped += res.skipped;
     } catch (error) {
       if (phase && runId) {
         savePendingRows({ runId, phase, rows: rows.slice(i), error, log });

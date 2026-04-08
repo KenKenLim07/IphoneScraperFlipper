@@ -68,11 +68,17 @@ export function readRuntimeConfig(args) {
     discoveryFilterBuyers: envBool("PLAYWRIGHT_DISCOVERY_FILTER_BUYERS", true),
     discoveryExcludeKeywords: cleanText(process.env.PLAYWRIGHT_DISCOVERY_EXCLUDE_KEYWORDS) || "",
     discoveryRequireIphoneModel: envBool("PLAYWRIGHT_DISCOVERY_REQUIRE_IPHONE_MODEL", false),
+    discoveryUpdateExistingGraphql: envBool("PLAYWRIGHT_DISCOVERY_UPDATE_EXISTING_GRAPHQL", false),
+    discoveryGraphqlOnly: envBool("PLAYWRIGHT_DISCOVERY_GRAPHQL_ONLY", false),
     watchlistRecheckLimit: envInt("PLAYWRIGHT_WATCHLIST_RECHECK_LIMIT", 8),
     watchlistConcurrency: envInt("PLAYWRIGHT_WATCHLIST_RECHECK_CONCURRENCY", 1),
     watchlistChunkSize: envInt("PLAYWRIGHT_WATCHLIST_CHUNK_SIZE", 20),
     monitorBlockImages: envBool("PLAYWRIGHT_MONITOR_BLOCK_IMAGES", true),
     monitorWaitForNetworkIdle: envBool("PLAYWRIGHT_MONITOR_WAIT_FOR_NETWORKIDLE", false),
+    monitorUseNetwork:
+      process.env.PLAYWRIGHT_MONITOR_USE_NETWORK == null
+        ? envBool("SCRAPE_USE_NETWORK", false)
+        : envBool("PLAYWRIGHT_MONITOR_USE_NETWORK", false),
     maxCards: args.maxCards,
     dryRun: !!args.dryRun,
     bootstrapLogin: !!args.bootstrapLogin
