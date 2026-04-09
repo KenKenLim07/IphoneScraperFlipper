@@ -119,7 +119,7 @@ export default async function ItemPage({ params }: { params: Promise<{ listing_i
               </span>
             </a>
           </Button>
-          <Link className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground" href="/">
+          <Link className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground" href="/listings">
             Back to list
           </Link>
         </div>

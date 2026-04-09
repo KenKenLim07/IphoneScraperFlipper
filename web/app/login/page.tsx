@@ -10,7 +10,7 @@ export default async function Login({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = await searchParams;
-  const next = (Array.isArray(sp.next) ? sp.next[0] : sp.next) || "/";
+  const next = (Array.isArray(sp.next) ? sp.next[0] : sp.next) || "/listings";
   const hasError = (Array.isArray(sp.error) ? sp.error[0] : sp.error) === "1";
 
   return (
@@ -38,7 +38,7 @@ export default async function Login({
               Continue
             </Button>
             <div className="text-center text-xs text-muted-foreground">
-              <Link className="underline underline-offset-4 hover:text-foreground" href="/">
+              <Link className="underline underline-offset-4 hover:text-foreground" href="/listings">
                 Back to listings
               </Link>
             </div>
@@ -48,4 +48,3 @@ export default async function Login({
     </div>
   );
 }
-

@@ -1,374 +1,264 @@
 import Link from "next/link";
+import { BadgePercent, CheckCircle2, Clock, Radar, ShieldCheck } from "lucide-react";
 
 import { ListingSignalPills } from "@/components/listing-signal-pills";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { fetchPublicListings } from "@/lib/data";
-import { formatDateTime, formatPct, formatPhp, formatRelativeAge } from "@/lib/format";
-import type { PublicListing } from "@/lib/types";
 
-function asString(v: string | string[] | undefined): string {
-  return Array.isArray(v) ? v[0] || "" : v || "";
-}
+const previewRiskFlags = {
+  face_id_working: true,
+  trutone_working: true,
+  lcd_replaced: true,
+  network_locked: false,
+  no_description: false
+};
 
-function statusBadge(status: string) {
-  const s = String(status || "active").toLowerCase();
-  if (s === "sold") return <Badge className="bg-amber-500 text-white">sold</Badge>;
-  if (s === "unavailable") return <Badge className="bg-slate-600 text-white">unavailable</Badge>;
-  return <Badge variant="secondary">active</Badge>;
-}
+const stats = [
+  { label: "Updated every few minutes", value: "Fresh data", helper: "so you see the latest deals" },
+  { label: "Highlights underpriced listings", value: "Value first", helper: "so you can act fast" },
+  { label: "Flags risky devices", value: "Red flags", helper: "so you avoid bad units" },
+  { label: "Shows what’s worth messaging", value: "Faster decisions", helper: "no guesswork" }
+];
 
-function dealScoreBadge(score: unknown) {
-  const s = String(score || "").toUpperCase();
-  if (s === "A") return <Badge className="bg-emerald-600 text-white">A</Badge>;
-  if (s === "B") return <Badge className="bg-sky-600 text-white">B</Badge>;
-  if (s === "C") return <Badge className="bg-amber-500 text-white">C</Badge>;
-  return null;
-}
-
-function confidenceBadge(value: unknown) {
-  const v = String(value || "").toLowerCase();
-  if (v === "high") return <Badge className="bg-emerald-600 text-white">high</Badge>;
-  if (v === "med") return <Badge className="bg-sky-600 text-white">med</Badge>;
-  if (v === "low") return <Badge variant="secondary">low</Badge>;
-  return <span className="text-muted-foreground">—</span>;
-}
-
-function confidenceMini(value: unknown) {
-  const v = String(value || "").toLowerCase();
-  if (v === "high") return <Badge className="h-6 bg-emerald-600 px-2 py-0 text-[11px] text-white">H</Badge>;
-  if (v === "med") return <Badge className="h-6 bg-sky-600 px-2 py-0 text-[11px] text-white">M</Badge>;
-  if (v === "low") return <Badge variant="outline" className="h-6 px-2 py-0 text-[11px] text-muted-foreground">L</Badge>;
-  return null;
-}
-
-function showDeal(row: PublicListing) {
-  const s = String(row.deal_score || "").toUpperCase();
-  return s === "A" || s === "B" || s === "C";
-}
-
-function buildHref(params: Record<string, string>, overrides: Partial<Record<string, string>>) {
-  const merged = { ...params, ...overrides };
-  const sp = new URLSearchParams();
-  for (const [k, v] of Object.entries(merged)) {
-    if (!v) continue;
-    sp.set(k, v);
+const steps = [
+  {
+    title: "We scan new listings",
+    description: "Fresh posts show up quickly so you can move first.",
+    icon: Radar
+  },
+  {
+    title: "We check price and condition",
+    description: "We compare similar listings to estimate real value.",
+    icon: ShieldCheck
+  },
+  {
+    title: "We show if it’s a good deal",
+    description: "We highlight issues like Face ID, screen, and locks.",
+    icon: BadgePercent
   }
-  const qs = sp.toString();
-  return qs ? `/?${qs}` : "/";
-}
+];
 
-export default async function Home({
-  searchParams
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const sp = await searchParams;
+const benefits = [
+  {
+    title: "Spot problems before you buy",
+    description: "See red flags early so you avoid costly mistakes."
+  },
+  {
+    title: "Compare prices instantly",
+    description: "We estimate real value so you don’t overpay."
+  },
+  {
+    title: "Find underpriced phones faster",
+    description: "Move quickly when a good deal appears."
+  },
+  {
+    title: "See only fresh listings",
+    description: "Stay ahead with listings checked regularly."
+  }
+];
 
-  const params = {
-    query: asString(sp.query),
-    min: asString(sp.min),
-    max: asString(sp.max),
-    status: asString(sp.status),
-    page: asString(sp.page) || "1"
-  };
-
-  const page = Math.max(1, Number.parseInt(params.page || "1", 10) || 1);
-  const min = params.min ? Number.parseInt(params.min, 10) : null;
-  const max = params.max ? Number.parseInt(params.max, 10) : null;
-
-  const data = await fetchPublicListings({
-    query: params.query || null,
-    status: params.status || null,
-    min: Number.isFinite(min as number) ? (min as number) : null,
-    max: Number.isFinite(max as number) ? (max as number) : null,
-    page,
-    pageSize: 50
-  });
-
-  const nowMs = Date.now();
-  const updatedAt =
-    data.items
-      .map((i) => i.last_seen_at)
-      .filter(Boolean)
-      .map((v) => new Date(String(v)).getTime())
-      .filter((ms) => Number.isFinite(ms))
-      .sort((a, b) => b - a)[0] || null;
-
+export default function Home() {
   return (
-    <div className="space-y-4 sm:space-y-6">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-balance text-xl font-semibold tracking-tight sm:text-2xl">Public listings</h1>
-        <p className="text-xs text-muted-foreground">
-          Updated at {updatedAt ? formatDateTime(new Date(updatedAt).toISOString()) : "—"}
-        </p>
-        <p className="text-sm text-muted-foreground">
-          Browse recent iPhone listings. Deal score is public; detail page and seller link are gated behind login.
-        </p>
-      </div>
+    <div className="space-y-12 sm:space-y-16">
+      <section className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+        <div className="space-y-5">
+          <Badge variant="outline" className="w-fit border-border/70 bg-card/60 text-xs">
+            Ops Center Noir · Deal Intelligence
+          </Badge>
+              <h1 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl lg:text-5xl">
+  Spot underpriced iPhones before others do.
+</h1>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Search</CardTitle>
-          <CardDescription>Filter by title keywords, price range, and status.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form method="get" className="grid gap-3 md:grid-cols-12">
-            <div className="md:col-span-5">
-              <label className="mb-1 block text-[11px] font-medium text-muted-foreground sm:text-xs" htmlFor="query">
-                Keywords
-              </label>
-              <Input id="query" name="query" placeholder="e.g. iPhone 13 128" defaultValue={params.query} />
-            </div>
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-[11px] font-medium text-muted-foreground sm:text-xs" htmlFor="min">
-                Min (PHP)
-              </label>
-              <Input id="min" name="min" inputMode="numeric" placeholder="5000" defaultValue={params.min} />
-            </div>
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-[11px] font-medium text-muted-foreground sm:text-xs" htmlFor="max">
-                Max (PHP)
-              </label>
-              <Input id="max" name="max" inputMode="numeric" placeholder="25000" defaultValue={params.max} />
-            </div>
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-[11px] font-medium text-muted-foreground sm:text-xs" htmlFor="status">
-                Status
-              </label>
-              <select
-                id="status"
-                name="status"
-                defaultValue={params.status}
-                className="h-11 w-full rounded-md border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:h-10 sm:text-sm"
-              >
-                <option value="">Any</option>
-                <option value="active">active</option>
-                <option value="sold">sold</option>
-                <option value="unavailable">unavailable</option>
-              </select>
-            </div>
-            <div className="flex items-end gap-2 md:col-span-1">
-              <Button type="submit" className="w-full">
-                Apply
-              </Button>
-            </div>
+<p className="mt-2 text-lg font-semibold text-foreground sm:text-xl">
+  Stop overpaying or buying bad units.
+</p>
 
-            <input type="hidden" name="page" value="1" />
+<p className="mt-4 text-base text-muted-foreground sm:text-lg">
+  We compare prices and flag hidden issues so you don’t overpay or buy a bad unit.
+</p>
 
-            <div className="md:col-span-12">
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-muted-foreground">
-                <span>
-                  Showing {data.items.length} items • page {data.page} • sorted by posted time
-                </span>
-                <Link className="underline underline-offset-4 hover:text-foreground" href="/">
-                  Clear filters
-                </Link>
-              </div>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+<p className="mt-2 text-sm text-foreground/70">
+  Skip the noise — find listings that are actually worth your time.
+</p>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Listings</CardTitle>
-          <CardDescription>Click any row to view the detail page (login required).</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {data.items.length ? (
-            <>
-              <div className="space-y-3 sm:hidden">
-                {data.items.map((row: PublicListing) => (
-                  (() => {
-                    const dealVisible = showDeal(row);
-                    const score = dealVisible ? dealScoreBadge(row.deal_score) : null;
-                    const below = dealVisible ? row.below_market_pct : null;
-                    const conf = dealVisible ? row.confidence : null;
-                    const profit = dealVisible ? row.est_profit_php : null;
-                    return (
-                  <Link
-                    key={row.listing_id}
-                    href={`/item/${encodeURIComponent(row.listing_id)}`}
-                    className="block rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm transition-colors active:bg-muted/40"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2 text-sm font-medium leading-snug">
-                          <span>{row.public_title}</span>
-                        </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {row.location_raw || "—"}
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <ListingSignalPills
-                            riskFlags={row.risk_flags}
-                            batteryHealth={row.battery_health}
-                            openline={row.openline}
-                            variant="public"
-                          />
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                          {score ? (
-                            <>
-                              {score}
-                              <span className="font-mono text-foreground">
-                                {below != null ? `${formatPct(below)} below` : "—"}
-                              </span>
-                              {confidenceMini(conf)}
-                            </>
-                          ) : (
-                            <span>Deal score —</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <div className="font-mono text-sm">{formatPhp(row.price_php)}</div>
-                        <div className="mt-1 flex justify-end">{statusBadge(row.status)}</div>
-                        {score ? (
-                          <div className="mt-2 text-[11px] text-muted-foreground">
-                            profit <span className="font-mono text-foreground">{formatPhp(profit)}</span>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                      <span className="font-mono">id={row.listing_id}</span>
-                      <span className="font-mono">
-                        {formatRelativeAge(row.posted_at || row.first_seen_at, nowMs)}
-                        {!row.posted_at ? " (est.)" : ""}
-                      </span>
-                    </div>
-                  </Link>
-                    );
-                  })()
-                ))}
-              </div>
+<p className="mt-1 text-sm text-foreground/60">
+  Good deals don’t stay long.
+</p>
 
-              <div className="hidden overflow-x-auto sm:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Model</TableHead>
-                      <TableHead className="whitespace-nowrap">Price</TableHead>
-                      <TableHead className="whitespace-nowrap">Location</TableHead>
-                      <TableHead className="whitespace-nowrap">Deal</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="whitespace-nowrap">Posted</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.items.map((row: PublicListing) => (
-                      (() => {
-                        const dealVisible = showDeal(row);
-                        const score = dealVisible ? dealScoreBadge(row.deal_score) : null;
-                        const below = dealVisible ? row.below_market_pct : null;
-                        const conf = dealVisible ? row.confidence : null;
-                        const profit = dealVisible ? row.est_profit_php : null;
-                        return (
-                      <TableRow key={row.listing_id}>
-                        <TableCell className="min-w-[320px] max-w-[420px]">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Link
-                              href={`/item/${encodeURIComponent(row.listing_id)}`}
-                              className="font-medium hover:underline hover:underline-offset-4"
-                            >
-                              {row.public_title}
-                            </Link>
-                          </div>
-                        <div className="mt-1 font-mono text-[11px] text-muted-foreground">
-                          id={row.listing_id}
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <ListingSignalPills
-                            riskFlags={row.risk_flags}
-                            batteryHealth={row.battery_health}
-                            openline={row.openline}
-                            variant="public"
-                          />
-                        </div>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap font-mono">{formatPhp(row.price_php)}</TableCell>
-                        <TableCell className="max-w-[200px] truncate" title={row.location_raw || ""}>
-                          {row.location_raw || "—"}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          {dealVisible ? (
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">Score</span>
-                                {score || <span className="text-muted-foreground">—</span>}
-                              </div>
-                              <div className="text-[11px] text-muted-foreground">
-                                {below != null ? (
-                                  <span className="font-mono text-foreground">{formatPct(below)} below</span>
-                                ) : (
-                                  "—"
-                                )}
-                                <span className="mx-1">•</span>
-                                {confidenceBadge(conf)}
-                              </div>
-                              <div className="text-[11px] text-muted-foreground">
-                                profit{" "}
-                                <span className="font-mono text-foreground">{formatPhp(profit)}</span>
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>{statusBadge(row.status)}</TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          <span title={formatDateTime(row.posted_at || row.first_seen_at)}>
-                            {formatRelativeAge(row.posted_at || row.first_seen_at, nowMs)}
-                          </span>
-                          {!row.posted_at ? <span className="ml-2 text-[11px] text-muted-foreground">(est.)</span> : null}
-                        </TableCell>
-                      </TableRow>
-                        );
-                      })()
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </>
-          ) : (
-            <div className="rounded-lg border border-dashed border-border p-8 text-center">
-              <div className="text-sm font-medium">No results</div>
-              <div className="mt-1 text-sm text-muted-foreground">
-                Try widening your filters (or clear them).
-              </div>
-            </div>
-          )}
-
-          <div className="mt-4 flex items-center justify-between">
-            {data.page <= 1 ? (
-              <Button variant="outline" className="min-w-[120px]" disabled>
-                Prev
-              </Button>
-            ) : (
-              <Button asChild variant="outline" className="min-w-[120px]">
-                <Link href={buildHref(params, { page: String(Math.max(1, data.page - 1)) })}>Prev</Link>
-              </Button>
-            )}
-
-            <div className="text-xs text-muted-foreground">Page {data.page}</div>
-
-            {!data.hasMore ? (
-              <Button variant="outline" className="min-w-[120px]" disabled>
-                Next
-              </Button>
-            ) : (
-              <Button asChild variant="outline" className="min-w-[120px]">
-                <Link href={buildHref(params, { page: String(data.page + 1) })}>Next</Link>
-              </Button>
-            )}
+<div className="mt-4 flex flex-wrap gap-2">
+            <Button asChild className="min-w-[160px]">
+              <Link href="/listings">View listings</Link>
+            </Button>
+            <Button asChild variant="secondary" className="min-w-[120px]">
+              <Link href="/login">Login</Link>
+            </Button>
           </div>
-        </CardContent>
-      </Card>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              We compare similar listings to estimate real value
+            </span>
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              We highlight issues like Face ID, screen, and locks
+            </span>
+          </div>
+        </div>
+
+        <Card className="relative overflow-hidden border-border/70 bg-card/80 shadow-[0_0_30px_rgba(37,99,235,0.12)]">
+          <CardHeader className="space-y-1">
+            <CardTitle className="text-lg">Live Preview</CardTitle>
+            <CardDescription>See if it’s worth messaging.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">iPhone 12 Pro 128GB</div>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span>Bacolod City, PH-06 · active</span>
+                  <Badge
+                    variant="outline"
+                      className="border-border bg-muted/40 text-[11px] text-muted-foreground">
+                         Just posted
+                      </Badge>
+                </div>
+              </div>
+              <div className="flex flex-col items-end gap-1">
+                <Badge variant="secondary" className="bg-emerald-600 text-white">
+                  Good Deal?
+                </Badge>
+                <span className="text-xs text-muted-foreground">Confidence: Medium</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div className="rounded-lg border border-border bg-muted/30 p-2">
+                <div className="text-muted-foreground">Below average price</div>
+                <div className="font-mono text-sm">22%</div>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/30 p-2">
+                <div className="text-muted-foreground">Estimated profit</div>
+                <div className="font-mono text-sm">₱1,500</div>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/30 p-2">
+                <div className="text-muted-foreground">Good Deal?</div>
+                <div className="font-mono text-sm">Yes</div>
+              </div>
+            </div>
+            <ListingSignalPills
+              variant="detail"
+              maxWarnings={2}
+              riskFlags={previewRiskFlags}
+              batteryHealth={87}
+              openline={true}
+            />
+            <div className="rounded-lg border border-border/70 bg-muted/20 p-3 text-xs">
+              <div className="flex items-center gap-2 font-medium text-muted-foreground">
+                <ShieldCheck className="h-4 w-4" />
+                Red Flags
+              </div>
+              <ul className="mt-2 list-disc space-y-1 pl-4 text-muted-foreground">
+                <li>LCD replaced</li>
+                <li>Screen issue likely</li>
+              </ul>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {stats.map((stat) => (
+          <Card key={stat.label} className="border-border/70 bg-card/70">
+            <CardContent className="flex min-h-[120px] flex-col justify-center gap-2 p-4">
+              <div className="text-xs text-muted-foreground">{stat.label}</div>
+              <div className="text-lg font-semibold text-foreground">
+                <span className="font-mono" style={{ textShadow: "0 0 12px rgba(37,99,235,0.35)" }}>
+                  {stat.value}
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground">{stat.helper}</div>
+            </CardContent>
+          </Card>
+        ))}
+      </section>
+
+      <section className="space-y-4">
+        <div className="space-y-1">
+          <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">How it works</h2>
+          <p className="text-sm text-muted-foreground">A tight pipeline that prioritizes speed and trust.</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          {steps.map((step) => (
+            <Card key={step.title} className="h-full border-border/70 bg-card/70">
+              <CardContent className="flex min-h-[140px] flex-col justify-center gap-3 p-4">
+                <step.icon className="h-5 w-5 text-primary" aria-hidden />
+                <div className="text-sm font-semibold">{step.title}</div>
+                <p className="text-xs text-muted-foreground">{step.description}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">So you know what’s worth messaging.</p>
+      </section>
+
+      <section className="space-y-4">
+        <div className="space-y-1">
+          <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">Why it helps</h2>
+          <p className="text-sm text-muted-foreground">Everything you need to flip safely and fast.</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {benefits.map((benefit) => (
+            <Card key={benefit.title} className="border-border/70 bg-card/70">
+              <CardContent className="flex min-h-[140px] flex-col justify-center gap-3 p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <BadgePercent className="h-4 w-4 text-primary" aria-hidden />
+                  {benefit.title}
+                </div>
+                <p className="text-xs text-muted-foreground">{benefit.description}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid gap-3 lg:grid-cols-[1.1fr_0.9fr]">
+        <Card className="border-border/70 bg-card/70">
+          <CardHeader>
+            <CardTitle>Built on real marketplace data</CardTitle>
+            <CardDescription>Decision support you can trust.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <Radar className="h-4 w-4 text-primary" aria-hidden />
+              Based on real marketplace data.
+            </div>
+            <div className="flex items-center gap-2">
+              <BadgePercent className="h-4 w-4 text-primary" aria-hidden />
+              Analyzes price, condition, and listing details.
+            </div>
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-primary" aria-hidden />
+              Listings are checked regularly.
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/70 bg-card/70">
+          <CardHeader>
+            <CardTitle>Ready to scout deals?</CardTitle>
+            <CardDescription>Jump into the listings and start triaging fast.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Button asChild className="w-full">
+              <Link href="/listings">View listings</Link>
+            </Button>
+            <Button asChild variant="secondary" className="w-full">
+              <Link href="/login">Login</Link>
+            </Button>
+            <p className="text-xs text-muted-foreground">See what’s worth messaging — before it’s gone.</p>
+          </CardContent>
+        </Card>
+      </section>
     </div>
   );
 }

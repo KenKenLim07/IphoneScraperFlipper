@@ -13,11 +13,10 @@ export default function NotFound() {
         </CardHeader>
         <CardContent>
           <Button asChild>
-            <Link href="/">Back to listings</Link>
+            <Link href="/listings">Back to listings</Link>
           </Button>
         </CardContent>
       </Card>
     </div>
   );
 }
-
