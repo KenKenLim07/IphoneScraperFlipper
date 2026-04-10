@@ -1,23 +1,43 @@
 import { DETAIL_NOISE_RE, DETAIL_STOP_RE, LISTED_IN_RE, LOCATION_LINE_RE } from "./constants.mjs";
 import { cleanText, extractBestPhpPriceRaw, extractPrice, inferDescription, inferLocation, isPriceOnly } from "./utils.mjs";
 
-export function looksLikeUnavailableListing(bodyText) {
-  const body = String(bodyText || "").toLowerCase();
+export function looksLikeUnavailableListing(bodyText, debug) {
+  const body = String(bodyText || "")
+    .toLowerCase()
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\s+/g, " ");
   const markers = [
     "this listing isn't available",
+    "this listing isn't available anymore",
+    "this listing is not available",
     "this listing is no longer available",
     "this content isn't available",
     "something went wrong",
     "page isn't available",
     "page not found"
   ];
-  return markers.some((m) => body.includes(m));
+  for (const m of markers) {
+    if (body.includes(m)) {
+      if (debug) debug.match = m;
+      return true;
+    }
+  }
+  return false;
 }
 
-export function looksLikeSoldListing(bodyText) {
-  const body = String(bodyText || "").toLowerCase();
+export function looksLikeSoldListing(bodyText, debug) {
+  const body = String(bodyText || "")
+    .toLowerCase()
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\s+/g, " ");
   const markers = ["this item is sold", "this listing is sold", "marked as sold", "sold Â·"];
-  return markers.some((m) => body.includes(m));
+  for (const m of markers) {
+    if (body.includes(m)) {
+      if (debug) debug.match = m;
+      return true;
+    }
+  }
+  return false;
 }
 
 export function cleanOgTitle(value) {
@@ -102,7 +122,12 @@ export async function extractDetailFieldsFromPage(page, record) {
       detailTexts: texts.slice(detailsIndex, detailsIndex + 80),
       listedLine,
       aboveFoldTexts: aboveFoldTexts.slice(0, 240),
-      detailCondition
+      detailCondition,
+      adPreviewText: Array.from(document.querySelectorAll("[data-ad-preview='message']"))
+        .map((el) => (el.innerText || "").replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .slice(0, 3)
+        .join(" | ")
     };
   });
 
@@ -111,6 +136,7 @@ export async function extractDetailFieldsFromPage(page, record) {
   const listedLine = cleanText(result?.listedLine);
   const aboveFoldTexts = Array.isArray(result?.aboveFoldTexts) ? result.aboveFoldTexts : [];
   const detailCondition = cleanText(result?.detailCondition);
+  const adPreviewText = cleanText(result?.adPreviewText);
   const primaryPriceRaw = pickPrimaryPriceRaw(aboveFoldTexts);
 
   let detailLocation = null;
@@ -155,8 +181,49 @@ export async function extractDetailFieldsFromPage(page, record) {
     if (lines.length >= 3) break;
   }
 
-  const detailDescription = lines.length ? normalizeDetailDescription(lines.join(" | ")) : null;
-  return { detailDescription, detailLocation, listedLine, aboveFoldTexts, primaryPriceRaw, detailCondition };
+  const loweredAll = allTexts.map((t) => String(t || "").trim().toLowerCase());
+  const descriptionLabels = new Set([
+    "description",
+    "about this item",
+    "deskripsyon",
+    "paglalarawan"
+  ]);
+  let sectionDescription = null;
+  const labelIdx = loweredAll.findIndex((t) => descriptionLabels.has(t));
+  if (labelIdx >= 0) {
+    const sectionLines = [];
+    for (let i = labelIdx + 1; i < Math.min(loweredAll.length, labelIdx + 8); i += 1) {
+      const v = cleanText(allTexts[i]);
+      if (!v) continue;
+      const lowered = v.toLowerCase();
+      if (descriptionLabels.has(lowered)) continue;
+      if (DETAIL_NOISE_RE.test(v)) continue;
+      if (DETAIL_STOP_RE.test(v)) break;
+      if (lowered === titleClean || lowered === priceClean) continue;
+      if (isPriceOnly(v)) continue;
+      if (LOCATION_LINE_RE.test(v)) continue;
+      if (v.length < 4) continue;
+      sectionLines.push(v);
+      if (sectionLines.length >= 3) break;
+    }
+    if (sectionLines.length) {
+      sectionDescription = normalizeDetailDescription(sectionLines.join(" | "));
+    }
+  }
+
+  const detailDescription =
+    normalizeDetailDescription(adPreviewText) ||
+    sectionDescription ||
+    (lines.length ? normalizeDetailDescription(lines.join(" | ")) : null);
+  return {
+    detailDescription,
+    detailLocation,
+    listedLine,
+    aboveFoldTexts,
+    primaryPriceRaw,
+    detailCondition,
+    allTexts
+  };
 }
 
 export function deriveDescriptionFromDetail({ bodyText, metaOgDescription, title, priceRaw, detailDescription }) {

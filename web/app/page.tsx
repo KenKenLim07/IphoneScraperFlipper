@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BadgePercent, CheckCircle2, Clock, Radar, ShieldCheck } from "lucide-react";
+import { BadgePercent, CheckCircle2, Clock, Flag, Radar, ShieldCheck } from "lucide-react";
 
 import { ListingSignalPills } from "@/components/listing-signal-pills";
 import { Badge } from "@/components/ui/badge";
@@ -152,12 +152,12 @@ export default function Home() {
               batteryHealth={87}
               openline={true}
             />
-            <div className="rounded-lg border border-border/70 bg-muted/20 p-3 text-xs">
-              <div className="flex items-center gap-2 font-medium text-muted-foreground">
-                <ShieldCheck className="h-4 w-4" />
+            <div className="rounded-lg border border-rose-500/60 bg-rose-500/5 p-3 text-xs text-muted-foreground">
+              <div className="flex items-center gap-2 font-medium text-rose-300">
+                <Flag className="h-4 w-4" />
                 Red Flags
               </div>
-              <ul className="mt-2 list-disc space-y-1 pl-4 text-muted-foreground">
+              <ul className="mt-2 list-disc space-y-1 pl-4">
                 <li>LCD replaced</li>
                 <li>Screen issue likely</li>
               </ul>

@@ -334,6 +334,33 @@ export async function persistToDatabase(rows, { log } = {}) {
       if ((row.listing_status || "active") !== (existing.status || "active")) {
         changedFields.push("status");
       }
+      if ((nextListingPriceAmount ?? null) !== (existing.listing_price_amount ?? null)) {
+        changedFields.push("listing_price_amount");
+      }
+      if ((nextListingPriceFormatted ?? null) !== (existing.listing_price_formatted ?? null)) {
+        changedFields.push("listing_price_formatted");
+      }
+      if ((nextListingSellerId ?? null) !== (existing.listing_seller_id ?? null)) {
+        changedFields.push("listing_seller_id");
+      }
+      if ((nextListingLocationCity ?? null) !== (existing.listing_location_city ?? null)) {
+        changedFields.push("listing_location_city");
+      }
+      if ((nextListingLocationState ?? null) !== (existing.listing_location_state ?? null)) {
+        changedFields.push("listing_location_state");
+      }
+      if ((nextListingIsLive ?? null) !== (existing.listing_is_live ?? null)) {
+        changedFields.push("listing_is_live");
+      }
+      if ((nextListingIsSold ?? null) !== (existing.listing_is_sold ?? null)) {
+        changedFields.push("listing_is_sold");
+      }
+      if ((nextListingIsPending ?? null) !== (existing.listing_is_pending ?? null)) {
+        changedFields.push("listing_is_pending");
+      }
+      if ((nextListingIsHidden ?? null) !== (existing.listing_is_hidden ?? null)) {
+        changedFields.push("listing_is_hidden");
+      }
 
       if (changedFields.length) {
         updated += 1;

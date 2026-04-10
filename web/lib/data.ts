@@ -66,9 +66,8 @@ function publicTitleFromFeatures(feat: any, fallbackTitle: unknown): string {
 
 export type PublicListingsQuery = {
   query?: string | null;
-  min?: number | null;
-  max?: number | null;
   status?: string | null;
+  sort?: "deals" | "latest";
   page?: number;
   pageSize?: number;
 };
@@ -82,19 +81,32 @@ export async function fetchPublicListings(input: PublicListingsQuery) {
 
   const q = cleanText(input.query);
   const status = cleanText(input.status);
-
-  const min = input.min != null && Number.isFinite(input.min) ? input.min : null;
-  const max = input.max != null && Number.isFinite(input.max) ? input.max : null;
+  const sort = input.sort === "latest" ? "latest" : "deals";
 
   const supabase = supabaseAdmin();
+  const selectBase =
+    "listing_id,title,price_php,price_raw,location_raw,status,posted_at,first_seen_at,last_seen_at,last_price_change_at,deal:deal_metrics(deal_score,below_market_pct,confidence,est_profit_php),feat:listing_features(model_family,variant,storage_gb,battery_health,openline,risk_flags)";
+  const selectDeals =
+    "listing_id,title,price_php,price_raw,location_raw,status,posted_at,first_seen_at,last_seen_at,last_price_change_at,deal:deal_metrics!inner(deal_score,below_market_pct,confidence,est_profit_php),feat:listing_features(model_family,variant,storage_gb,battery_health,openline,risk_flags)";
+
   let query = supabase
     .from("listings")
-    .select(
-      "listing_id,title,price_php,price_raw,location_raw,status,posted_at,first_seen_at,last_seen_at,last_price_change_at,deal:deal_metrics(deal_score,below_market_pct,confidence,est_profit_php),feat:listing_features(model_family,variant,storage_gb,battery_health,openline,risk_flags)"
-    )
-    .order("posted_at", { ascending: false, nullsFirst: false })
-    .order("first_seen_at", { ascending: false, nullsFirst: false })
-    .order("listing_id", { ascending: false, nullsFirst: false });
+    .select(sort === "deals" ? selectDeals : selectBase, { count: "exact" });
+
+  if (sort === "deals") {
+    query = query
+      .in("deal_metrics.deal_score", ["A", "B", "C"])
+      .order("est_profit_php", { ascending: false, nullsFirst: false, referencedTable: "deal_metrics" })
+      .order("deal_score", { ascending: true, nullsFirst: false, referencedTable: "deal_metrics" })
+      .order("posted_at", { ascending: false, nullsFirst: false })
+      .order("first_seen_at", { ascending: false, nullsFirst: false })
+      .order("listing_id", { ascending: false, nullsFirst: false });
+  } else {
+    query = query
+      .order("posted_at", { ascending: false, nullsFirst: false })
+      .order("first_seen_at", { ascending: false, nullsFirst: false })
+      .order("listing_id", { ascending: false, nullsFirst: false });
+  }
 
   if (q) {
     query = query.ilike("title", `%${q}%`);
@@ -102,18 +114,16 @@ export async function fetchPublicListings(input: PublicListingsQuery) {
   if (status) {
     query = query.eq("status", status);
   }
-  if (min != null) {
-    query = query.gte("price_php", min);
-  }
-  if (max != null) {
-    query = query.lte("price_php", max);
-  }
 
   const res = await query.range(from, to);
   if (res.error) throw new Error(res.error.message);
   const rows = (res.data || []) as unknown as any[];
-  const hasMore = rows.length > pageSize;
-  const items: PublicListing[] = rows.slice(0, pageSize).map((r) => {
+  const total = typeof res.count === "number" ? res.count : null;
+  const hasMore =
+    sort === "deals" && typeof total === "number"
+      ? total > page * pageSize
+      : rows.length > pageSize;
+  let items: PublicListing[] = rows.slice(0, pageSize).map((r) => {
     const deal = Array.isArray(r?.deal) ? r.deal[0] : r?.deal;
     const feat = Array.isArray(r?.feat) ? r.feat[0] : r?.feat;
     return {
@@ -136,9 +146,35 @@ export async function fetchPublicListings(input: PublicListingsQuery) {
       risk_flags: feat?.risk_flags ?? null
     };
   });
+
+  if (sort === "deals") {
+    const scoreRank = (score: unknown) => {
+      const s = String(score || "").toUpperCase();
+      if (s === "A") return 0;
+      if (s === "B") return 1;
+      if (s === "C") return 2;
+      return 9;
+    };
+    const timeValue = (value: unknown) => {
+      const parsed = value ? new Date(String(value)).getTime() : NaN;
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    items = [...items].sort((a, b) => {
+      const profitA = typeof a.est_profit_php === "number" ? a.est_profit_php : -Infinity;
+      const profitB = typeof b.est_profit_php === "number" ? b.est_profit_php : -Infinity;
+      if (profitA !== profitB) return profitB - profitA;
+      const rankDiff = scoreRank(a.deal_score) - scoreRank(b.deal_score);
+      if (rankDiff !== 0) return rankDiff;
+      const timeA = timeValue(a.posted_at || a.first_seen_at);
+      const timeB = timeValue(b.posted_at || b.first_seen_at);
+      if (timeA !== timeB) return timeB - timeA;
+      return String(b.listing_id).localeCompare(String(a.listing_id));
+    });
+  }
   return {
     page,
     pageSize,
+    total,
     hasMore,
     items
   };
@@ -214,16 +250,15 @@ export async function fetchPrivateListing(listingId: string) {
 export function parsePublicQueryParams(params: URLSearchParams): PublicListingsQuery {
   const query = cleanText(params.get("query"));
   const status = cleanText(params.get("status"));
-  const min = parseIntParam(params.get("min"), NaN);
-  const max = parseIntParam(params.get("max"), NaN);
+  const sortRaw = cleanText(params.get("sort"));
+  const sort = sortRaw === "latest" ? "latest" : "deals";
   const page = parseIntParam(params.get("page"), 1);
   const pageSize = parseIntParam(params.get("pageSize"), 50);
 
   return {
     query,
     status,
-    min: Number.isFinite(min) ? min : null,
-    max: Number.isFinite(max) ? max : null,
+    sort,
     page,
     pageSize
   };

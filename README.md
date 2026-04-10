@@ -30,6 +30,10 @@ Run:
 cd scraper
 npm run sniffer:playwright-extra:discover -- --max-cards 50 --browser-channel chromium --headless
 npm run sniffer:playwright-extra:monitor  -- --limit 50 --browser-channel chromium --headless
+
+cd ~/Desktop/Projects/IphoneflipperScrapper
+npm --prefix scraper run -s sniffer:playwright-extra:discover -- --max-cards 100 --browser-channel chromium --headless
+
 ```
 
 ### Deal intelligence (comps + score)

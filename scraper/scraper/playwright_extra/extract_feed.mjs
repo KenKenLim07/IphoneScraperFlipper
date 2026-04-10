@@ -25,6 +25,12 @@ function envInt(name, fallback) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function envBool(name, fallback) {
+  const raw = String(process.env[name] || "").trim().toLowerCase();
+  if (!raw) return fallback;
+  return ["1", "true", "yes", "on"].includes(raw);
+}
+
 function isLikelyMarketplaceResponse(url, contentType) {
   const lowerUrl = String(url || "").toLowerCase();
   const lowerType = String(contentType || "").toLowerCase();
@@ -890,12 +896,13 @@ export async function extractDiscoveryRows(page, opts) {
         log,
         seenInRun: new Set()
       });
+      const preferGraphqlPrice = envBool("PLAYWRIGHT_PREFER_GRAPHQL_PRICE_RAW", false);
       let overlayed = 0;
       for (const row of domOverlay.rows) {
         const id = String(row.listing_id || "");
         if (!id || !merged.has(id)) continue;
         const existing = merged.get(id);
-        if (row.price_php != null && Number.isFinite(row.price_php)) {
+        if (!preferGraphqlPrice && row.price_php != null && Number.isFinite(row.price_php)) {
           existing.price_raw = row.price_raw;
           existing.price_php = row.price_php;
         }

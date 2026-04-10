@@ -8,7 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchPublicListings } from "@/lib/data";
 import { formatDateTime, formatPct, formatPhp, formatRelativeAge } from "@/lib/format";
+import { parseRiskFlags } from "@/lib/riskFlags";
 import type { PublicListing } from "@/lib/types";
+import { Flag } from "lucide-react";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 function asString(v: string | string[] | undefined): string {
   return Array.isArray(v) ? v[0] || "" : v || "";
@@ -21,28 +26,58 @@ function statusBadge(status: string) {
   return <Badge variant="secondary">active</Badge>;
 }
 
+function scoreTone(score: unknown) {
+  const s = String(score || "").toUpperCase();
+  if (s === "A") return { bg: "bg-emerald-600", text: "text-emerald-300" };
+  if (s === "B") return { bg: "bg-amber-500", text: "text-amber-300" };
+  if (s === "C") return { bg: "bg-rose-600", text: "text-rose-300" };
+  return { bg: "bg-muted", text: "text-muted-foreground" };
+}
+
 function dealScoreBadge(score: unknown) {
   const s = String(score || "").toUpperCase();
-  if (s === "A") return <Badge className="bg-emerald-600 text-white">A</Badge>;
-  if (s === "B") return <Badge className="bg-sky-600 text-white">B</Badge>;
-  if (s === "C") return <Badge className="bg-amber-500 text-white">C</Badge>;
-  return null;
+  if (s !== "A" && s !== "B" && s !== "C") return null;
+  const tone = scoreTone(s);
+  return (
+    <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold text-white ${tone.bg}`}>
+      {s}
+    </span>
+  );
 }
 
-function confidenceBadge(value: unknown) {
+function confidenceLabel(value: unknown) {
   const v = String(value || "").toLowerCase();
-  if (v === "high") return <Badge className="bg-emerald-600 text-white">high</Badge>;
-  if (v === "med") return <Badge className="bg-sky-600 text-white">med</Badge>;
-  if (v === "low") return <Badge variant="secondary">low</Badge>;
-  return <span className="text-muted-foreground">—</span>;
+  if (v === "high" || v === "med" || v === "low") return v;
+  return "—";
 }
 
-function confidenceMini(value: unknown) {
+function confidenceTone(value: unknown) {
   const v = String(value || "").toLowerCase();
-  if (v === "high") return <Badge className="h-6 bg-emerald-600 px-2 py-0 text-[11px] text-white">H</Badge>;
-  if (v === "med") return <Badge className="h-6 bg-sky-600 px-2 py-0 text-[11px] text-white">M</Badge>;
-  if (v === "low") return <Badge variant="outline" className="h-6 px-2 py-0 text-[11px] text-muted-foreground">L</Badge>;
-  return null;
+  if (v === "high") return "text-emerald-300";
+  if (v === "med") return "text-amber-300";
+  if (v === "low") return "text-rose-300";
+  return "text-muted-foreground";
+}
+
+function buildRedFlags(value: unknown): string[] {
+  const flags = parseRiskFlags(value);
+  const warnings: string[] = [];
+
+  if (flags.icloud_lock) warnings.push("iCloud / activation / reset risk");
+  if (flags.wanted_post) warnings.push("Looks like buyer/wanted post (LF/WTB/BUYING)");
+  if (flags.face_id_not_working) warnings.push("Face ID not working");
+  if (flags.screen_issue) warnings.push("Screen issue detected");
+  if (flags.camera_issue) warnings.push("Camera issue detected");
+  if (flags.lcd_replaced) warnings.push("LCD replaced");
+  if (flags.network_locked) warnings.push("Network-locked (Globe/Smart/SIM lock)");
+  if (flags.wifi_only) warnings.push("WiFi-only (no cellular)");
+  if (flags.trutone_missing) warnings.push("TrueTone missing");
+  if (flags.back_glass_replaced) warnings.push("Back glass replaced");
+  if (flags.back_glass_cracked) warnings.push("Back glass cracked");
+  if (flags.battery_replaced) warnings.push("Battery replaced");
+  if (flags.no_description) warnings.push("No/short description (unknown condition)");
+
+  return warnings;
 }
 
 function showDeal(row: PublicListing) {
@@ -70,26 +105,25 @@ export default async function Home({
 
   const params = {
     query: asString(sp.query),
-    min: asString(sp.min),
-    max: asString(sp.max),
     status: asString(sp.status),
+    sort: asString(sp.sort) || "deals",
     page: asString(sp.page) || "1"
   };
 
   const page = Math.max(1, Number.parseInt(params.page || "1", 10) || 1);
-  const min = params.min ? Number.parseInt(params.min, 10) : null;
-  const max = params.max ? Number.parseInt(params.max, 10) : null;
+  const sortMode = params.sort === "latest" ? "latest" : "deals";
 
   const data = await fetchPublicListings({
     query: params.query || null,
     status: params.status || null,
-    min: Number.isFinite(min as number) ? (min as number) : null,
-    max: Number.isFinite(max as number) ? (max as number) : null,
+    sort: sortMode,
     page,
     pageSize: 50
   });
 
   const nowMs = Date.now();
+  const totalListings =
+    typeof data.total === "number" && Number.isFinite(data.total) ? data.total : null;
   const updatedAt =
     data.items
       .map((i) => i.last_seen_at)
@@ -97,6 +131,9 @@ export default async function Home({
       .map((v) => new Date(String(v)).getTime())
       .filter((ms) => Number.isFinite(ms))
       .sort((a, b) => b - a)[0] || null;
+  const hasDeals = data.items.some((row) => showDeal(row));
+  const showDealColumn = sortMode === "deals" || hasDeals;
+  const sortLabel = sortMode === "deals" ? "profit" : "latest";
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -110,75 +147,109 @@ export default async function Home({
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Search</CardTitle>
-          <CardDescription>Filter by title keywords, price range, and status.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form method="get" className="grid gap-3 md:grid-cols-12">
-            <div className="md:col-span-5">
-              <label className="mb-1 block text-[11px] font-medium text-muted-foreground sm:text-xs" htmlFor="query">
-                Keywords
-              </label>
-              <Input id="query" name="query" placeholder="e.g. iPhone 13 128" defaultValue={params.query} />
-            </div>
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-[11px] font-medium text-muted-foreground sm:text-xs" htmlFor="min">
-                Min (PHP)
-              </label>
-              <Input id="min" name="min" inputMode="numeric" placeholder="5000" defaultValue={params.min} />
-            </div>
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-[11px] font-medium text-muted-foreground sm:text-xs" htmlFor="max">
-                Max (PHP)
-              </label>
-              <Input id="max" name="max" inputMode="numeric" placeholder="25000" defaultValue={params.max} />
-            </div>
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-[11px] font-medium text-muted-foreground sm:text-xs" htmlFor="status">
-                Status
-              </label>
-              <select
-                id="status"
-                name="status"
-                defaultValue={params.status}
-                className="h-11 w-full rounded-md border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:h-10 sm:text-sm"
+      <form method="get" className="grid gap-3">
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px_120px_auto] sm:items-end">
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-muted-foreground sm:text-xs" htmlFor="query">
+              Search
+            </label>
+            <Input id="query" name="query" placeholder="e.g. iPhone 13 128" defaultValue={params.query} />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-muted-foreground sm:text-xs" htmlFor="status">
+              Status
+            </label>
+            <select
+              id="status"
+              name="status"
+              defaultValue={params.status}
+              className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:h-10"
+            >
+              <option value="">Any</option>
+              <option value="active">active</option>
+              <option value="sold">sold</option>
+              <option value="unavailable">unavailable</option>
+            </select>
+          </div>
+          <div>
+            <Button type="submit" className="w-full">
+              Search
+            </Button>
+          </div>
+          <div className="hidden items-end justify-end sm:flex">
+            <div className="inline-flex rounded-md border border-border bg-background/60 p-1">
+              <Button
+                asChild
+                size="sm"
+                variant={sortMode === "deals" ? "secondary" : "ghost"}
+                className="h-9 px-3 text-xs"
               >
-                <option value="">Any</option>
-                <option value="active">active</option>
-                <option value="sold">sold</option>
-                <option value="unavailable">unavailable</option>
-              </select>
-            </div>
-            <div className="flex items-end gap-2 md:col-span-1">
-              <Button type="submit" className="w-full">
-                Apply
+                <Link href={buildHref(params, { sort: "deals", page: "1" })} aria-current={sortMode === "deals" ? "page" : undefined}>
+                  Best deals
+                </Link>
+              </Button>
+              <Button
+                asChild
+                size="sm"
+                variant={sortMode === "latest" ? "secondary" : "ghost"}
+                className="h-9 px-3 text-xs"
+              >
+                <Link href={buildHref(params, { sort: "latest", page: "1" })} aria-current={sortMode === "latest" ? "page" : undefined}>
+                  Latest
+                </Link>
               </Button>
             </div>
+          </div>
+        </div>
 
-            <input type="hidden" name="page" value="1" />
+        <div className="flex sm:hidden">
+          <div className="inline-flex w-full rounded-md border border-border bg-background/60 p-1">
+            <Button
+              asChild
+              size="sm"
+              variant={sortMode === "deals" ? "secondary" : "ghost"}
+              className="h-9 flex-1 px-3 text-xs"
+            >
+              <Link href={buildHref(params, { sort: "deals", page: "1" })} aria-current={sortMode === "deals" ? "page" : undefined}>
+                Best deals
+              </Link>
+            </Button>
+            <Button
+              asChild
+              size="sm"
+              variant={sortMode === "latest" ? "secondary" : "ghost"}
+              className="h-9 flex-1 px-3 text-xs"
+            >
+              <Link href={buildHref(params, { sort: "latest", page: "1" })} aria-current={sortMode === "latest" ? "page" : undefined}>
+                Latest
+              </Link>
+            </Button>
+          </div>
+        </div>
 
-            <div className="md:col-span-12">
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-muted-foreground">
-                <span>
-                  Showing {data.items.length} items • page {data.page} • sorted by posted time
-                </span>
-                <Link className="underline underline-offset-4 hover:text-foreground" href="/listings">
-                  Clear filters
-                </Link>
-              </div>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+        <input type="hidden" name="page" value="1" />
+        <input type="hidden" name="sort" value={sortMode} />
+
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span>
+            Showing {data.items.length} items • page {data.page} • sorted by {sortLabel}
+          </span>
+          <Link className="underline underline-offset-4 hover:text-foreground" href="/listings">
+            Clear filters
+          </Link>
+        </div>
+      </form>
 
       <Card>
         <CardHeader>
-          <CardTitle>Listings</CardTitle>
-          <CardDescription>Click any row to view the detail page (login required).</CardDescription>
+          <CardTitle>Total listings</CardTitle>
+          <CardDescription>
+            Total listings: {totalListings != null ? totalListings.toLocaleString() : "—"} • Click any row to view the
+            detail page (login required).
+          </CardDescription>
         </CardHeader>
         <CardContent>
+
           {data.items.length ? (
             <>
               <div className="space-y-3 sm:hidden">
@@ -189,6 +260,11 @@ export default async function Home({
                     const below = dealVisible ? row.below_market_pct : null;
                     const conf = dealVisible ? row.confidence : null;
                     const profit = dealVisible ? row.est_profit_php : null;
+                    const confidenceText = confidenceLabel(conf);
+                    const confidenceClass = confidenceTone(conf);
+                    const redFlags = buildRedFlags(row.risk_flags);
+                    const shownRedFlags = redFlags.slice(0, 6);
+                    const extraRedFlags = redFlags.length - shownRedFlags.length;
                     return (
                   <Link
                     key={row.listing_id}
@@ -211,26 +287,46 @@ export default async function Home({
                             variant="public"
                           />
                         </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                          {score ? (
-                            <>
-                              {score}
-                              <span className="font-mono text-foreground">
-                                {below != null ? `${formatPct(below)} below` : "—"}
-                              </span>
-                              {confidenceMini(conf)}
-                            </>
-                          ) : (
-                            <span>Deal score —</span>
-                          )}
-                        </div>
+                        {shownRedFlags.length ? (
+                          <div className="mt-2 rounded-lg border border-rose-500/60 bg-rose-500/5 p-2 text-[11px] text-muted-foreground">
+                            <div className="flex items-center gap-2 font-medium text-rose-300">
+                              <Flag className="h-3 w-3" aria-hidden />
+                              Red Flags Detected
+                            </div>
+                            <ul className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 list-disc pl-4">
+                              {shownRedFlags.map((flag) => (
+                                <li key={flag}>{flag}</li>
+                              ))}
+                              {extraRedFlags > 0 ? (
+                                <li className="col-span-2 text-muted-foreground">+{extraRedFlags} more</li>
+                              ) : null}
+                            </ul>
+                          </div>
+                        ) : null}
+                        {score ? (
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                            {score}
+                            <span className="flex items-center gap-1 font-mono">
+                              <span>{below != null ? `${formatPct(below)} below` : "—"}</span>
+                              <span>•</span>
+                              <span className={confidenceClass}>{confidenceText}</span>
+                            </span>
+                          </div>
+                        ) : sortMode === "deals" ? (
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                            <Badge variant="outline" className="h-6 px-2 py-0 text-[11px] text-muted-foreground">
+                              Unscored
+                            </Badge>
+                          </div>
+                        ) : null}
                       </div>
                       <div className="shrink-0 text-right">
                         <div className="font-mono text-sm">{formatPhp(row.price_php)}</div>
                         <div className="mt-1 flex justify-end">{statusBadge(row.status)}</div>
                         {score ? (
                           <div className="mt-2 text-[11px] text-muted-foreground">
-                            profit <span className="font-mono text-foreground">{formatPhp(profit)}</span>
+                            possible profit{" "}
+                            <span className="font-mono text-foreground">{formatPhp(profit)}</span>
                           </div>
                         ) : null}
                       </div>
@@ -255,7 +351,7 @@ export default async function Home({
                       <TableHead>Model</TableHead>
                       <TableHead className="whitespace-nowrap">Price</TableHead>
                       <TableHead className="whitespace-nowrap">Location</TableHead>
-                      <TableHead className="whitespace-nowrap">Deal</TableHead>
+                      {showDealColumn ? <TableHead className="whitespace-nowrap">Deal</TableHead> : null}
                       <TableHead>Status</TableHead>
                       <TableHead className="whitespace-nowrap">Posted</TableHead>
                     </TableRow>
@@ -268,6 +364,11 @@ export default async function Home({
                         const below = dealVisible ? row.below_market_pct : null;
                         const conf = dealVisible ? row.confidence : null;
                         const profit = dealVisible ? row.est_profit_php : null;
+                        const confidenceText = confidenceLabel(conf);
+                        const confidenceClass = confidenceTone(conf);
+                        const redFlags = buildRedFlags(row.risk_flags);
+                        const shownRedFlags = redFlags.slice(0, 6);
+                        const extraRedFlags = redFlags.length - shownRedFlags.length;
                         return (
                       <TableRow key={row.listing_id}>
                         <TableCell className="min-w-[320px] max-w-[420px]">
@@ -290,36 +391,50 @@ export default async function Home({
                             variant="public"
                           />
                         </div>
+                        {shownRedFlags.length ? (
+                          <div className="mt-2 rounded-lg border border-rose-500/60 bg-rose-500/5 p-2 text-[11px] text-muted-foreground">
+                            <div className="flex items-center gap-2 font-medium text-rose-300">
+                              <Flag className="h-3 w-3" aria-hidden />
+                              Red Flags
+                            </div>
+                            <ul className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 list-disc pl-4">
+                              {shownRedFlags.map((flag) => (
+                                <li key={flag}>{flag}</li>
+                              ))}
+                              {extraRedFlags > 0 ? (
+                                <li className="col-span-2 text-muted-foreground">+{extraRedFlags} more</li>
+                              ) : null}
+                            </ul>
+                          </div>
+                        ) : null}
                         </TableCell>
                         <TableCell className="whitespace-nowrap font-mono">{formatPhp(row.price_php)}</TableCell>
                         <TableCell className="max-w-[200px] truncate" title={row.location_raw || ""}>
                           {row.location_raw || "—"}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          {dealVisible ? (
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">Score</span>
-                                {score || <span className="text-muted-foreground">—</span>}
+                        {showDealColumn ? (
+                          <TableCell className="whitespace-nowrap">
+                            {dealVisible ? (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-muted-foreground">Score</span>
+                                  {score || <span className="text-muted-foreground">—</span>}
+                                </div>
+                                <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                                  <span className="font-mono">{below != null ? `${formatPct(below)} below` : "—"}</span>
+                                  <span>•</span>
+                                  <span className={confidenceClass}>{confidenceText}</span>
+                                </div>
+                                <div className="text-[11px] text-muted-foreground">
+                                  possible profit{" "}
+                                  <span className="font-mono text-foreground">{formatPhp(profit)}</span>
+                                </div>
                               </div>
-                              <div className="text-[11px] text-muted-foreground">
-                                {below != null ? (
-                                  <span className="font-mono text-foreground">{formatPct(below)} below</span>
-                                ) : (
-                                  "—"
-                                )}
-                                <span className="mx-1">•</span>
-                                {confidenceBadge(conf)}
-                              </div>
-                              <div className="text-[11px] text-muted-foreground">
-                                profit{" "}
-                                <span className="font-mono text-foreground">{formatPhp(profit)}</span>
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
+                            ) : sortMode === "deals" ? (
+                              <span className="text-xs text-muted-foreground">Unscored</span>
+                            ) : null}
+                          </TableCell>
+                        ) : null}
                         <TableCell>{statusBadge(row.status)}</TableCell>
                         <TableCell className="whitespace-nowrap">
                           <span title={formatDateTime(row.posted_at || row.first_seen_at)}>

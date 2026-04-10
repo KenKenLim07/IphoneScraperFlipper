@@ -5,7 +5,7 @@ import {
   CameraOff,
   CloudOff,
   FileWarning,
-  Fingerprint,
+  ScanFace,
   Lock,
   Unlock,
   Monitor,
@@ -92,7 +92,7 @@ export function ListingSignalPills({
     {
       label: "FaceID",
       title: faceTone === "unknown" ? "Face ID status unknown" : `Face ID ${faceTone === "good" ? "working" : "not working"}`,
-      icon: Fingerprint,
+      icon: ScanFace,
       tone: faceTone
     },
     {

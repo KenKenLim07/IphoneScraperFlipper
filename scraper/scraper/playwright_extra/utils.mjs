@@ -65,7 +65,7 @@ export function inferPostedAtFromBodyText(bodyText, scrapedAtIso) {
   const lower = raw.toLowerCase();
   // Common Marketplace pattern: "Listed 2 days ago" / "Listed about an hour ago"
   const m =
-    /listed\s+(?:about\s+)?(\d+|a|an)\s+(min|mins|minute|minutes|hr|hrs|hour|hours|day|days|week|weeks|month|months|year|years)\s+ago\b/i.exec(
+    /listed\s*(?:[•·-]\s*)?(?:about\s+)?(\d+|a|an)\s+(min|mins|minute|minutes|hr|hrs|hour|hours|day|days|week|weeks|month|months|year|years)\s+ago\b/i.exec(
       lower
     );
   if (m) {
@@ -77,15 +77,15 @@ export function inferPostedAtFromBodyText(bodyText, scrapedAtIso) {
     }
   }
 
-  if (/\blisted\s+just\s+now\b/i.test(lower)) {
+  if (/\blisted\s*(?:[•·-]\s*)?just\s+now\b/i.test(lower)) {
     return new Date(baseMs).toISOString();
   }
 
-  if (/\blisted\s+yesterday\b/i.test(lower)) {
+  if (/\blisted\s*(?:[•·-]\s*)?yesterday\b/i.test(lower)) {
     return new Date(baseMs - 24 * 60 * 60 * 1000).toISOString();
   }
 
-  if (/\blisted\s+today\b/i.test(lower)) {
+  if (/\blisted\s*(?:[•·-]\s*)?today\b/i.test(lower)) {
     return new Date(baseMs).toISOString();
   }
 
@@ -392,5 +392,8 @@ export function isLocationLikeDescription(value) {
 export function isWeakDescription(value) {
   // "Weak" is now intentionally strict: only treat missing/empty as weak.
   // Some sellers use very short descriptions, and location strings are not harmful.
-  return cleanText(value) == null;
+  const cleaned = cleanText(value);
+  if (cleaned == null) return true;
+  if (/find friends\s*\|\s*marketplace(\s*\|\s*browse all)?/i.test(cleaned)) return true;
+  return false;
 }
