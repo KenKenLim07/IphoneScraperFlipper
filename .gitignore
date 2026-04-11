@@ -48,3 +48,4 @@ scraper/data/
 # Local backups / migrated leftovers
 infra/legacy/
 facebookgraphql.jsonf
+.worktrees
