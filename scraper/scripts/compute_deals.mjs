@@ -3,7 +3,7 @@ import process from "node:process";
 import { createClient } from "@supabase/supabase-js";
 
 import { loadDotenv } from "../scraper/env.mjs";
-import { detectIssues, hasIcloudRisk } from "./detect_issues.mjs";
+import { detectIssues, buildDebugReasons, hasIcloudRisk } from "./deal_text.mjs";
 
 loadDotenv();
 
@@ -164,7 +164,6 @@ function parseOpenline(text) {
   return null;
 }
 
-
 function looksLikeWantedPost(title) {
   const t = normalizeTitle(title).toLowerCase();
   if (!t) return false;
@@ -295,6 +294,8 @@ async function main() {
     const noDescription = descLen < 24;
 
     if (debugListingId && debugListingId === listingId) {
+      const reasons = buildDebugReasons(text);
+      console.log(`[DEBUG] issues_reasons listing_id=${listingId} ${JSON.stringify(reasons)}`);
       console.log(
         `[DEBUG] listing_id=${listingId} battery_health=${batteryHealth ?? "n/a"} storage_gb=${storageGb ?? "n/a"} desc_len=${descLen} ` +
           `text_preview="${cleanText(text)?.slice(0, 200) || "n/a"}"`

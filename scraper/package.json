@@ -14,6 +14,7 @@
     "db:versions": "node scripts/db_noisy_versions_report.mjs",
     "env:audit": "node scripts/env_audit.mjs",
     "deals:compute": "node scripts/compute_deals.mjs",
+    "deals:test": "node --test scripts/deal_text.test.mjs",
     "qa": "node scraper/qa_check.mjs",
     "backfill": "node scraper/backfill_missing.mjs"
   },
