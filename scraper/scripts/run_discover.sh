@@ -8,6 +8,13 @@ cd "${REPO_ROOT}"
 
 mkdir -p .tmp logs
 
+if [[ -f "${REPO_ROOT}/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "${REPO_ROOT}/.env"
+  set +a
+fi
+
 LOCK_FILE="${REPO_ROOT}/.tmp/discover.lock"
 exec 9>"${LOCK_FILE}"
 if command -v flock >/dev/null 2>&1; then

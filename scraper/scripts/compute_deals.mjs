@@ -325,6 +325,8 @@ async function main() {
     const openline = parseOpenline(text);
     const regionCode = regionCodeFromLocation(l.location_raw);
     const issues = detectIssues(text);
+    const pricePhp =
+      typeof l.price_php === "number" ? l.price_php : l.price_php == null ? null : Number(l.price_php);
 
     const descLen = cleanText(l.description)?.length || 0;
     const noDescription = descLen < 24;
@@ -339,6 +341,9 @@ async function main() {
           `text_preview="${cleanText(text)?.slice(0, 200) || "n/a"}"`
       );
     }
+
+    const priceTikalon =
+      pricePhp != null && Number.isFinite(pricePhp) && pricePhp <= compMin;
 
     const riskFlags = {
       icloud_lock: hasIcloudRisk(text) || null,
@@ -355,7 +360,8 @@ async function main() {
       network_locked: issues.network_locked || null,
       wifi_only: issues.wifi_only || null,
       button_issue: issues.button_issue || null,
-      no_description: noDescription || null
+      no_description: noDescription || null,
+      price_too_low: priceTikalon || null
     };
 
     const listingTimeMs =
@@ -377,7 +383,7 @@ async function main() {
 
     candidates.push({
       listing_id: listingId,
-      price_php: typeof l.price_php === "number" ? l.price_php : l.price_php == null ? null : Number(l.price_php),
+      price_php: pricePhp,
       listing_time_ms: listingTimeMs,
       region_code: regionCode,
       model_family: modelFamily,
@@ -555,9 +561,11 @@ async function main() {
 
       if (lowConfidenceComps) addReason(`⚠️ Low confidence comps (n=${sampleSize}, score capped to C)`);
       if (noDesc) addReason("⚠️ No/short description (unknown condition, score capped to C)");
+      if (c.risk_flags?.price_too_low) addReason("⚠️ Tikalon price check");
     } else {
       if (!hardBlock && lowConfidenceComps) addReason(`⚠️ Low confidence comps (n=${sampleSize})`);
       if (!hardBlock && noDesc) addReason("⚠️ No/short description (unknown condition)");
+      if (!hardBlock && c.risk_flags?.price_too_low) addReason("⚠️ Tikalon price check");
     }
 
     if (!hardBlock && riskCost > 0) {
@@ -576,6 +584,7 @@ async function main() {
     if (c.risk_flags?.back_glass_cracked) addReason("⚠️ Back glass cracked");
     if (c.risk_flags?.battery_replaced) addReason("⚠️ Battery replaced");
     if (c.risk_flags?.button_issue) addReason("⚠️ Button issue (volume/power)");
+    if (c.risk_flags?.price_too_low) addReason("⚠️ Tikalon price check");
 
     addReason(`Confidence: ${confidence} (n=${sampleSize} comps)`);
 

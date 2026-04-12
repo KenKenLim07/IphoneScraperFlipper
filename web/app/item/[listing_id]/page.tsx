@@ -42,6 +42,7 @@ function buildWarnings(listing: any): string[] {
 
   if (flags.icloud_lock) warnings.push("iCloud / activation / reset risk");
   if (flags.wanted_post) warnings.push("Looks like buyer/wanted post (LF/WTB/BUYING)");
+  if (flags.price_too_low) warnings.push("Tikalon price yarn?");
   if (flags.face_id_not_working) warnings.push("Face ID not working");
   if (flags.screen_issue) warnings.push("Screen issue detected");
     if (flags.camera_issue) warnings.push("Camera issue detected");
@@ -52,6 +53,7 @@ function buildWarnings(listing: any): string[] {
   if (flags.back_glass_replaced) warnings.push("Back glass replaced");
   if (flags.back_glass_cracked) warnings.push("Back glass cracked");
   if (flags.battery_replaced) warnings.push("Battery replaced");
+  if (flags.button_issue) warnings.push("Button issue (volume/power)");
   if (flags.no_description) warnings.push("No/short description (unknown condition)");
 
   return warnings;
@@ -83,100 +85,186 @@ export default async function ItemPage({ params }: { params: Promise<{ listing_i
     confidence !== "low";
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <div className="font-mono text-xs text-muted-foreground">listing_id={listing.listing_id}</div>
-          <h1 className="text-balance text-xl font-semibold tracking-tight sm:text-2xl">
-            {stripEmojiFromTitle(listing.title)}
-          </h1>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <span className="font-mono">{formatPhp(listing.price_php)}</span>
-            <span>•</span>
-            <span>{listing.location_raw || "—"}</span>
-            <span>•</span>
-            {statusBadge(listing.status)}
-            <span>•</span>
-            <span className="flex items-center gap-2">
-              <span className="text-muted-foreground">score</span>
-              {dealScoreBadge(listing.deal_score)}
-            </span>
-            <span>•</span>
-            <span title={formatDateTime(listing.posted_at || listing.first_seen_at)}>
-              listed {formatRelativeAge(listing.posted_at || listing.first_seen_at)}
-              {!listing.posted_at ? " (est.)" : ""}
-            </span>
+    <div className="space-y-5 sm:space-y-7">
+      <header className="space-y-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-2">
+            <div className="font-mono text-xs text-muted-foreground">listing_id={listing.listing_id}</div>
+            <div className="flex flex-wrap items-baseline gap-3">
+              <h1 className="text-balance text-2xl font-semibold tracking-tight sm:text-3xl">
+                {stripEmojiFromTitle(listing.title)}
+              </h1>
+              <span className="font-mono text-xl text-foreground sm:text-2xl">
+                {formatPhp(listing.price_php)}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <span>{listing.location_raw || "—"}</span>
+              <span>•</span>
+              {statusBadge(listing.status)}
+              <span>•</span>
+              <span className="flex items-center gap-2">
+                <span className="text-muted-foreground">score</span>
+                {dealScoreBadge(listing.deal_score)}
+              </span>
+              <span>•</span>
+              <span title={formatDateTime(listing.posted_at || listing.first_seen_at)}>
+                listed {formatRelativeAge(listing.posted_at || listing.first_seen_at)}
+                {!listing.posted_at ? " (est.)" : ""}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            <Button asChild className="w-full sm:w-auto">
+              <a href={listing.url} target="_blank" rel="noreferrer">
+                <ExternalLink className="h-4 w-4" />
+                <span className="flex flex-col items-start leading-tight">
+                  <span>Message seller</span>
+                  <span className="text-[11px] text-primary-foreground/80">Open on Facebook</span>
+                </span>
+              </a>
+            </Button>
+            <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
+              <Link href="/listings">Back to list</Link>
+            </Button>
           </div>
         </div>
+      </header>
 
-        <div className="flex flex-col items-stretch gap-2 sm:items-end">
-          <Button asChild className="w-full sm:w-auto">
-            <a href={listing.url} target="_blank" rel="noreferrer">
-              <ExternalLink className="h-4 w-4" />
-              <span className="flex flex-col items-start leading-tight">
-                <span>Message seller</span>
-                <span className="text-[11px] text-primary-foreground/80">Open on Facebook</span>
-              </span>
-            </a>
-          </Button>
-          <Link className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground" href="/listings">
-            Back to list
-          </Link>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="space-y-5">
+          <section className="rounded-xl border border-border/70 bg-card/40 p-4 sm:p-5">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Description</div>
+            <div className="mt-3 text-sm leading-relaxed text-foreground">
+              {listing.description ? (
+                <p className="whitespace-pre-wrap">{listing.description}</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">No description captured yet.</p>
+              )}
+            </div>
+            <div className="mt-4 grid gap-2 rounded-lg border border-border/60 bg-muted/30 p-3 text-xs sm:grid-cols-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Sample size</span>
+                <span className="font-mono">{listing.comp_sample_size ?? "—"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">p25 / p50 / p75</span>
+                <span className="font-mono">
+                  {listing.comp_p25 != null ? formatPhp(listing.comp_p25) : "—"} /{" "}
+                  {listing.comp_p50 != null ? formatPhp(listing.comp_p50) : "—"} /{" "}
+                  {listing.comp_p75 != null ? formatPhp(listing.comp_p75) : "—"}
+                </span>
+              </div>
+            </div>
+            {Array.isArray(listing.reasons) && listing.reasons.length ? (
+              <div className="mt-4">
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Why</div>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                  {listing.reasons.slice(0, 8).map((r) => (
+                    <li key={r}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="rounded-xl border border-border/70 bg-card/40 p-4 sm:p-5">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Price history</div>
+            <div className="mt-3">
+              <PriceHistoryChart versions={versions} />
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-border/70 bg-card/40 p-4 sm:p-5">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Recent versions</div>
+            <div className="mt-3 space-y-2 sm:hidden">
+              {versions.slice(0, 20).map((v) => (
+                <div key={v.snapshot_at} className="rounded-xl border border-border bg-background p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-mono text-xs text-muted-foreground">
+                        {formatDateTime(v.snapshot_at)}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+                        <span className="font-mono">{formatPhp(v.price_php)}</span>
+                        {v.status ? statusBadge(v.status) : <span className="text-xs text-muted-foreground">—</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Changed:</span>{" "}
+                    {Array.isArray(v.changed_fields) && v.changed_fields.length
+                      ? v.changed_fields.map((x) => String(x)).join(", ")
+                      : "—"}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="hidden overflow-x-auto sm:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="whitespace-nowrap">Snapshot</TableHead>
+                    <TableHead className="whitespace-nowrap">Price</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Changed fields</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {versions.slice(0, 25).map((v) => (
+                    <TableRow key={v.snapshot_at} className="transition-colors hover:bg-muted/40">
+                      <TableCell className="whitespace-nowrap font-mono">{formatDateTime(v.snapshot_at)}</TableCell>
+                      <TableCell className="whitespace-nowrap font-mono">{formatPhp(v.price_php)}</TableCell>
+                      <TableCell>
+                        {v.status ? statusBadge(v.status) : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {Array.isArray(v.changed_fields) && v.changed_fields.length
+                          ? v.changed_fields.map((x) => String(x)).join(", ")
+                          : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </section>
         </div>
-      </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Description</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {listing.description ? (
-              <p className="whitespace-pre-wrap text-sm leading-relaxed">{listing.description}</p>
-            ) : (
-              <p className="text-sm text-muted-foreground">No description captured yet.</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Deal</CardTitle>
-              <CardDescription>Comps-based estimate (best-effort).</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2 text-xs sm:text-sm">
-              <div className="rounded-lg border border-border bg-muted/30 p-3">
-                <div className="text-[11px] font-medium text-muted-foreground">Final evaluation</div>
-                <div className="mt-1 flex items-center gap-2">
+        <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+          <section className="rounded-xl border border-border/70 bg-card/60 p-4">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Deal verdict</div>
+            <div className="mt-3 rounded-lg border border-border bg-muted/30 p-3">
+              <div className="text-[11px] font-medium text-muted-foreground">Final evaluation</div>
+              <div className="mt-2 space-y-1">
+                <div className="flex items-center gap-2 text-sm font-medium">
                   {goodForFlipping ? (
                     <>
-                      <Badge className="gap-1 bg-emerald-600 text-white">
-                        <CheckCircle2 className="h-4 w-4" aria-hidden />
-                        <span>Good deal (for flipping)</span>
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">Score + profit + confidence look OK.</span>
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500" aria-hidden />
+                      <span>Good deal (for flipping)</span>
                     </>
                   ) : (
                     <>
-                      <Badge variant="secondary" className="gap-1">
-                        <XCircle className="h-4 w-4" aria-hidden />
-                        <span>Not good (for flipping)</span>
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {hardBlocked
-                          ? "Hard risk flags detected."
-                          : profit != null && profit <= 0
-                            ? "Profit estimate is not positive."
-                            : confidence === "low"
-                              ? "Low confidence comps."
-                              : "Needs manual review."}
-                      </span>
+                      <XCircle className="h-4 w-4 text-rose-500" aria-hidden />
+                      <span>Not good (for flipping)</span>
                     </>
                   )}
                 </div>
+                <span className="text-xs text-muted-foreground">
+                  {hardBlocked
+                    ? "Hard risk flags detected."
+                    : profit != null && profit <= 0
+                      ? "Profit estimate is not positive."
+                      : confidence === "low"
+                        ? "Low confidence comps."
+                        : "Needs manual review."}
+                </span>
               </div>
+            </div>
 
+            <div className="mt-3 space-y-2 text-xs">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">Score</span>
                 <span className="flex items-center gap-2">{dealScoreBadge(listing.deal_score)}</span>
@@ -195,59 +283,36 @@ export default async function ItemPage({ params }: { params: Promise<{ listing_i
                 <span className="text-muted-foreground">Est. profit</span>
                 <span className="font-mono">{formatPhp(listing.est_profit_php ?? null)}</span>
               </div>
+            </div>
+          </section>
 
-              {warnings.length ? (
-                <div className="pt-2">
-                  <div className="rounded-lg border border-rose-200/70 bg-rose-50/70 p-3 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide">
-                      <AlertTriangle className="h-4 w-4" aria-hidden />
-                      <span>Warnings</span>
-                    </div>
-                    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
-                      {warnings.slice(0, 8).map((w) => (
-                        <li key={w}>{w}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="pt-2 text-[11px] text-muted-foreground">Comps</div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">Sample size</span>
-                <span className="font-mono">{listing.comp_sample_size ?? "—"}</span>
+          {warnings.length ? (
+            <section className="rounded-xl border border-rose-200/70 bg-rose-50/70 p-4 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide">
+                <AlertTriangle className="h-4 w-4" aria-hidden />
+                <span>Red flags</span>
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">p25 / p50 / p75</span>
-                <span className="font-mono">
-                  {listing.comp_p25 != null ? formatPhp(listing.comp_p25) : "—"} /{" "}
-                  {listing.comp_p50 != null ? formatPhp(listing.comp_p50) : "—"} /{" "}
-                  {listing.comp_p75 != null ? formatPhp(listing.comp_p75) : "—"}
-                </span>
-              </div>
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-xs">
+                {warnings.slice(0, 10).map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
-              {Array.isArray(listing.reasons) && listing.reasons.length ? (
-                <div className="pt-2">
-                  <div className="text-[11px] text-muted-foreground">Why</div>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
-                    {listing.reasons.slice(0, 8).map((r) => (
-                      <li key={r}>{r}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
+          <section className="rounded-xl border border-border/70 bg-card/60 p-4">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Signals</div>
+            <ListingSignalPills
+              className="mt-3"
+              riskFlags={listing.risk_flags}
+              batteryHealth={listing.battery_health}
+              openline={listing.openline}
+            />
+          </section>
 
-              <div className="pt-2">
-                <div className="text-[11px] text-muted-foreground">Signals</div>
-                <ListingSignalPills
-                  className="mt-2"
-                  riskFlags={listing.risk_flags}
-                  batteryHealth={listing.battery_health}
-                  openline={listing.openline}
-                />
-              </div>
-
-              <div className="pt-2 text-[11px] text-muted-foreground">Specs</div>
+          <section className="rounded-xl border border-border/70 bg-card/60 p-4">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Specs</div>
+            <div className="mt-3 space-y-2 text-xs">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">Model</span>
                 <span className="font-mono">{[listing.model_family, listing.variant].filter(Boolean).join(" ") || "—"}</span>
@@ -290,109 +355,35 @@ export default async function ItemPage({ params }: { params: Promise<{ listing_i
                 <span className="text-muted-foreground">Region</span>
                 <span className="font-mono">{listing.region_code || "—"}</span>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
 
-          <Card>
-          <CardHeader>
-            <CardTitle>Metadata</CardTitle>
-            <CardDescription>Last known scrape timestamps.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2 text-xs sm:text-sm">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">Posted</span>
-              <span className="font-mono" title={formatDateTime(listing.posted_at || listing.first_seen_at)}>
-                {formatRelativeAge(listing.posted_at || listing.first_seen_at)}
-                {!listing.posted_at ? " (est.)" : ""}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">First seen</span>
-              <span className="font-mono">{formatDateTime(listing.first_seen_at)}</span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">Last seen</span>
-              <span className="font-mono">{formatDateTime(listing.last_seen_at)}</span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">Price change</span>
-              <span className="font-mono">{formatDateTime(listing.last_price_change_at)}</span>
-            </div>
-          </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Price history</CardTitle>
-          <CardDescription>Last 100 snapshots (chart uses numeric PHP prices only).</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <PriceHistoryChart versions={versions} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent versions</CardTitle>
-          <CardDescription>Most recent snapshots first.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2 sm:hidden">
-            {versions.slice(0, 20).map((v) => (
-              <div key={v.snapshot_at} className="rounded-xl border border-border bg-background p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="font-mono text-xs text-muted-foreground">
-                      {formatDateTime(v.snapshot_at)}
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
-                      <span className="font-mono">{formatPhp(v.price_php)}</span>
-                      {v.status ? statusBadge(v.status) : <span className="text-xs text-muted-foreground">—</span>}
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-2 text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">Changed:</span>{" "}
-                  {Array.isArray(v.changed_fields) && v.changed_fields.length
-                    ? v.changed_fields.map((x) => String(x)).join(", ")
-                    : "—"}
-                </div>
+          <section className="rounded-xl border border-border/70 bg-card/60 p-4">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Metadata</div>
+            <div className="mt-3 space-y-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Posted</span>
+                <span className="font-mono" title={formatDateTime(listing.posted_at || listing.first_seen_at)}>
+                  {formatRelativeAge(listing.posted_at || listing.first_seen_at)}
+                  {!listing.posted_at ? " (est.)" : ""}
+                </span>
               </div>
-            ))}
-          </div>
-
-          <div className="hidden overflow-x-auto sm:block">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="whitespace-nowrap">Snapshot</TableHead>
-                  <TableHead className="whitespace-nowrap">Price</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Changed fields</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {versions.slice(0, 25).map((v) => (
-                  <TableRow key={v.snapshot_at}>
-                    <TableCell className="whitespace-nowrap font-mono">{formatDateTime(v.snapshot_at)}</TableCell>
-                    <TableCell className="whitespace-nowrap font-mono">{formatPhp(v.price_php)}</TableCell>
-                    <TableCell>
-                      {v.status ? statusBadge(v.status) : <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {Array.isArray(v.changed_fields) && v.changed_fields.length
-                        ? v.changed_fields.map((x) => String(x)).join(", ")
-                        : "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">First seen</span>
+                <span className="font-mono">{formatDateTime(listing.first_seen_at)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Last seen</span>
+                <span className="font-mono">{formatDateTime(listing.last_seen_at)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Price change</span>
+                <span className="font-mono">{formatDateTime(listing.last_price_change_at)}</span>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }

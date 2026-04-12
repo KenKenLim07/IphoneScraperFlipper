@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { ListingSignalPills } from "@/components/listing-signal-pills";
+import { BatteryHealthPill, PublicListingChecklist } from "@/components/listing-signal-pills";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,19 +63,21 @@ function buildRedFlags(value: unknown): string[] {
   const flags = parseRiskFlags(value);
   const warnings: string[] = [];
 
-  if (flags.icloud_lock) warnings.push("iCloud / activation / reset risk");
-  if (flags.wanted_post) warnings.push("Looks like buyer/wanted post (LF/WTB/BUYING)");
+  if (flags.icloud_lock) warnings.push("iCloud / reset risk");
+  if (flags.wanted_post) warnings.push("Buyer/wanted post");
+  if (flags.price_too_low) warnings.push("Tikalon price check");
   if (flags.face_id_not_working) warnings.push("Face ID not working");
   if (flags.screen_issue) warnings.push("Screen issue detected");
   if (flags.camera_issue) warnings.push("Camera issue detected");
   if (flags.lcd_replaced) warnings.push("LCD replaced");
-  if (flags.network_locked) warnings.push("Network-locked (Globe/Smart/SIM lock)");
-  if (flags.wifi_only) warnings.push("WiFi-only (no cellular)");
+  if (flags.network_locked) warnings.push("Network lock");
+  if (flags.wifi_only) warnings.push("WiFi-only");
   if (flags.trutone_missing) warnings.push("TrueTone missing");
   if (flags.back_glass_replaced) warnings.push("Back glass replaced");
   if (flags.back_glass_cracked) warnings.push("Back glass cracked");
   if (flags.battery_replaced) warnings.push("Battery replaced");
-  if (flags.no_description) warnings.push("No/short description (unknown condition)");
+  if (flags.button_issue) warnings.push("Button issue (volume/power)");
+  if (flags.no_description) warnings.push("Unknown condition");
 
   return warnings;
 }
@@ -266,29 +268,31 @@ export default async function Home({
                     const shownRedFlags = redFlags.slice(0, 6);
                     const extraRedFlags = redFlags.length - shownRedFlags.length;
                     return (
-                  <Link
-                    key={row.listing_id}
-                    href={`/item/${encodeURIComponent(row.listing_id)}`}
-                    className="block rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm transition-colors active:bg-muted/40"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2 text-sm font-medium leading-snug">
-                          <span>{row.public_title}</span>
+                      <Link
+                        key={row.listing_id}
+                        href={`/item/${encodeURIComponent(row.listing_id)}`}
+                        className="block rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm transition-colors active:bg-muted/40"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2 text-sm font-medium leading-snug">
+                              <span>{row.public_title}</span>
+                              <BatteryHealthPill batteryHealth={row.battery_health} />
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground">{row.location_raw || "—"}</div>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <div className="flex justify-end">{statusBadge(row.status)}</div>
+                            <div className="mt-1 font-mono text-sm">{formatPhp(row.price_php)}</div>
+                          </div>
                         </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {row.location_raw || "—"}
+
+                        <div className="mt-3">
+                          <PublicListingChecklist riskFlags={row.risk_flags} openline={row.openline} />
                         </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <ListingSignalPills
-                            riskFlags={row.risk_flags}
-                            batteryHealth={row.battery_health}
-                            openline={row.openline}
-                            variant="public"
-                          />
-                        </div>
+
                         {shownRedFlags.length ? (
-                          <div className="mt-2 rounded-lg border border-rose-500/60 bg-rose-500/5 p-2 text-[11px] text-muted-foreground">
+                          <div className="mt-3 rounded-lg border border-rose-500/60 bg-rose-500/5 p-2 text-[11px] text-muted-foreground">
                             <div className="flex items-center gap-2 font-medium text-rose-300">
                               <Flag className="h-3 w-3" aria-hidden />
                               Red Flags Detected
@@ -303,42 +307,36 @@ export default async function Home({
                             </ul>
                           </div>
                         ) : null}
+
                         {score ? (
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                             {score}
                             <span className="flex items-center gap-1 font-mono">
                               <span>{below != null ? `${formatPct(below)} below` : "—"}</span>
                               <span>•</span>
                               <span className={confidenceClass}>{confidenceText}</span>
                             </span>
+                            <span className="text-[11px] font-medium text-foreground">
+                              Est. profit{" "}
+                              <span className="font-mono">{formatPhp(profit)}</span>
+                            </span>
                           </div>
                         ) : sortMode === "deals" ? (
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                             <Badge variant="outline" className="h-6 px-2 py-0 text-[11px] text-muted-foreground">
                               Unscored
                             </Badge>
                           </div>
                         ) : null}
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <div className="font-mono text-sm">{formatPhp(row.price_php)}</div>
-                        <div className="mt-1 flex justify-end">{statusBadge(row.status)}</div>
-                        {score ? (
-                          <div className="mt-2 text-[11px] text-muted-foreground">
-                            possible profit{" "}
-                            <span className="font-mono text-foreground">{formatPhp(profit)}</span>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                      <span className="font-mono">id={row.listing_id}</span>
-                      <span className="font-mono">
-                        {formatRelativeAge(row.posted_at || row.first_seen_at, nowMs)}
-                        {!row.posted_at ? " (est.)" : ""}
-                      </span>
-                    </div>
-                  </Link>
+
+                        <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                          <span className="font-mono">id={row.listing_id}</span>
+                          <span className="font-mono">
+                            {formatRelativeAge(row.posted_at || row.first_seen_at, nowMs)}
+                            {!row.posted_at ? " (est.)" : ""}
+                          </span>
+                        </div>
+                      </Link>
                     );
                   })()
                 ))}
@@ -380,19 +378,15 @@ export default async function Home({
                               {row.public_title}
                             </Link>
                           </div>
-                        <div className="mt-1 font-mono text-[11px] text-muted-foreground">
-                          id={row.listing_id}
-                        </div>
+                        <div className="mt-1 font-mono text-[11px] text-muted-foreground">id={row.listing_id}</div>
                         <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <ListingSignalPills
-                            riskFlags={row.risk_flags}
-                            batteryHealth={row.battery_health}
-                            openline={row.openline}
-                            variant="public"
-                          />
+                          <BatteryHealthPill batteryHealth={row.battery_health} />
+                        </div>
+                        <div className="mt-2">
+                          <PublicListingChecklist riskFlags={row.risk_flags} openline={row.openline} />
                         </div>
                         {shownRedFlags.length ? (
-                          <div className="mt-2 rounded-lg border border-rose-500/60 bg-rose-500/5 p-2 text-[11px] text-muted-foreground">
+                          <div className="mt-3 rounded-lg border border-rose-500/60 bg-rose-500/5 p-2 text-[11px] text-muted-foreground">
                             <div className="flex items-center gap-2 font-medium text-rose-300">
                               <Flag className="h-3 w-3" aria-hidden />
                               Red Flags
@@ -425,9 +419,9 @@ export default async function Home({
                                   <span>•</span>
                                   <span className={confidenceClass}>{confidenceText}</span>
                                 </div>
-                                <div className="text-[11px] text-muted-foreground">
-                                  possible profit{" "}
-                                  <span className="font-mono text-foreground">{formatPhp(profit)}</span>
+                                <div className="text-[11px] font-medium text-foreground">
+                                  Est. profit{" "}
+                                  <span className="font-mono">{formatPhp(profit)}</span>
                                 </div>
                               </div>
                             ) : sortMode === "deals" ? (

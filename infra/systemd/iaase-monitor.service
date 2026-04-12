@@ -6,8 +6,9 @@ After=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=%h/Desktop/Projects/IphoneflipperScrapper/scraper
-ExecStart=/bin/bash -lc "%h/Desktop/Projects/IphoneflipperScrapper/scraper/scripts/run_monitor.sh"
-ExecStartPost=/bin/bash -lc "bash %h/Desktop/Projects/IphoneflipperScrapper/scraper/scripts/run_compute_deals.sh"
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/bash -lc "export NVM_DIR=\"$HOME/.nvm\"; [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"; command -v nvm >/dev/null 2>&1 && nvm use --lts >/dev/null; %h/Desktop/Projects/IphoneflipperScrapper/scraper/scripts/run_monitor.sh"
+ExecStartPost=/bin/bash -lc "export NVM_DIR=\"$HOME/.nvm\"; [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"; command -v nvm >/dev/null 2>&1 && nvm use --lts >/dev/null; bash %h/Desktop/Projects/IphoneflipperScrapper/scraper/scripts/run_compute_deals.sh"
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=6

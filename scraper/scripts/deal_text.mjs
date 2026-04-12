@@ -333,6 +333,7 @@ export function detectIssues(text) {
   const faceNegPhrase =
     /\b(no|not|wala|wla|di|dili|dli|indi|way|waay)\s+face\s*id\b/i.test(views.lower) ||
     /\bface\s*id\b[^\n]{0,24}\b(not\s*work(?:ing)?|issue|problem|broken|defect|dead|guba)\b/i.test(views.lower) ||
+    /\bissue\s*[:\-]\s*face\s*id\b/i.test(views.lower) ||
     ["faceid", "face_id"].some((tok) => {
       const idx = views.collapsed.indexOf(tok);
       if (idx === -1) return false;
@@ -392,6 +393,7 @@ export function hasIcloudRisk(text) {
     /\b(?:pa\s*)?bypa(?:ss|s)(?:ed)?\b/i,
     /\bby\s*pass(?:ed)?\b/i,
     /\bbaypas(?:sed)?\b/i,
+    /\bibypa(?:ss|s)(?:ed)?\b/i,
     /\bpabypa?s\b/i,
     /\bpabyba?s\b/i
   ];
@@ -399,6 +401,8 @@ export function hasIcloudRisk(text) {
     "bypass",
     "bypas",
     "baypas",
+    "ibypass",
+    "ibypas",
     "pabypass",
     "pabypas",
     "pabybas"

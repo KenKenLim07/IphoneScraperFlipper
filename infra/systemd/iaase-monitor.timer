@@ -3,7 +3,8 @@ Description=IAASE Facebook Marketplace - Monitor (Timer)
 
 [Timer]
 OnBootSec=5min
-OnUnitActiveSec=30min
+OnCalendar=*-*-* 00:05
+OnCalendar=*-*-* 07..23/2:05
 RandomizedDelaySec=2min
 Persistent=true
 Unit=iaase-monitor.service

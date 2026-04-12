@@ -3,7 +3,8 @@ Description=IAASE Facebook Marketplace - Discovery (Timer)
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=10min
+OnCalendar=*-*-* 00:00
+OnCalendar=*-*-* 07..23:00
 RandomizedDelaySec=30s
 Persistent=true
 Unit=iaase-discover.service
