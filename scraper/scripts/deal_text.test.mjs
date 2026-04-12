@@ -74,6 +74,13 @@ test("bypass phrasing triggers icloud risk", () => {
   assert.equal(hasIcloudRisk("Kamo nalang pa bypass no other issue"), true);
 });
 
+test("bypass slang variants trigger icloud risk", () => {
+  assert.equal(hasIcloudRisk("kamo lang pabybas no other issue"), true);
+  assert.equal(hasIcloudRisk("bag-o lang bypass"), true);
+  assert.equal(hasIcloudRisk("kamolangpabypas"), true);
+  assert.equal(hasIcloudRisk("by pass"), true);
+});
+
 test("safe to reset does not flip face id negative", () => {
   const issues = detectIssues("safe to reset Truetone face id working");
   assert.deepEqual(

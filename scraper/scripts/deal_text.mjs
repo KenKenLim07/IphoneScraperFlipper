@@ -1,25 +1,10 @@
-const NEG_TOKENS = new Set([
-  "no", "not", "wala", "wla", "di", "dili", "dli", "indi", "way", "waay",
-  "guba", "bypass", "hidden", "screenburn", "nalimtan",
-  "ilis", "isli", "repl", "rep", "pullout", "buka", "basag",
-  "issue", "problem", "broken", "defect", "dead", "disabled", "error", "fail", "failed"
-]);
-
 const ISSUE_LINE_RE = /^\s*issue\s*[:\-]/i;
 
 const NETWORK_ALIASES = ["network signal", "data signal", "signal", "network"];
-const NETWORK_NEGATIVE_ALIASES = ["no signal", "wala signal", "walang signal"];
 
 const CAMERA_ALIASES = ["camera", "back cam", "rear cam", "front cam", "cam"];
-const CAMERA_NEGATIVE_ALIASES = ["blurd", "blurry", "blurred", "blur", "fog"];
 
 const SCREEN_ALIASES = ["screen", "display", "lcd"];
-
-const POS_TOKENS = new Set([
-  "working", "work", "ok", "okay", "good", "goods", "gagana", "naga", "gana",
-  "hamis", "hamis2", "makinis", "orig", "original", "clean", "fresh", "unli",
-  "tanan", "lahat"
-]);
 
 const ALL_WORKING_PHRASES = [
   "all working",
@@ -35,16 +20,20 @@ const FEATURE_RULES = {
     sequences: [["face", "id"]],
     singles: ["faceid", "face_id"],
     collapsed: ["faceid", "face_id"],
-    positives: ["with", "may", "working", "ok", "okay", "gagana"],
-    negatives: ["no", "not", "wala", "wla", "di", "dili", "dli", "indi", "way", "waay", "guba", "issue", "problem", "broken", "defect", "dead", "disabled"],
+    positives: ["with", "may", "working", "wrking", "ok", "okay", "functional", "gagana", "gana", "naga"],
+    negatives: [
+      "no", "not", "wala", "wla", "di", "dili", "dli", "indi", "way", "waay",
+      "guba", "issue", "problem", "broken", "defect", "dead", "disabled",
+      "unavailable", "failed", "failure", "error", "cant", "cannot", "unusable"
+    ],
     allowFallbackWorking: true
   },
   trutone: {
     sequences: [["true", "tone"]],
     singles: ["truetone", "trueton", "trutone", "trueton"],
     collapsed: ["truetone", "trueton", "trutone"],
-    positives: ["working", "ok", "okay", "on", "gagana"],
-    negatives: ["no", "not", "wala", "wla", "di", "dili", "dli", "indi", "way", "waay", "missing", "off", "dead", "guba"],
+    positives: ["working", "wrking", "ok", "okay", "functional", "on", "gagana", "gana", "naga", "with", "may"],
+    negatives: ["no", "not", "wala", "wla", "di", "dili", "dli", "indi", "way", "waay", "missing", "off", "dead", "guba", "naguba"],
     allowFallbackWorking: true
   },
   camera: {
@@ -52,7 +41,7 @@ const FEATURE_RULES = {
     singles: ["camera", "cam"],
     collapsed: ["camera", "backcam", "rearcam", "frontcam", "cam"],
     positives: ["working", "ok", "okay", "clear", "good"],
-    negatives: ["issue", "problem", "broken", "defect", "dead", "blur", "blurd", "blurry", "blurred", "fog"],
+    negatives: ["issue", "problem", "broken", "defect", "dead", "blur", "blurd", "blurry", "blurred", "fog", "nocamera", "notworking", "notwork"],
     allowFallbackWorking: false
   },
   screen: {
@@ -60,7 +49,7 @@ const FEATURE_RULES = {
     singles: ["screen", "display"],
     collapsed: ["screen", "display"],
     positives: [],
-    negatives: ["issue", "problem", "broken", "lines", "green", "pink", "flicker", "burn", "dead", "touch", "ghost"],
+    negatives: ["issue", "problem", "broken", "line", "lines", "green", "pink", "flicker", "burn", "dead", "touch", "ghost"],
     allowFallbackWorking: false
   },
   lcd: {
@@ -82,9 +71,9 @@ const FEATURE_RULES = {
   network: {
     sequences: [["network", "signal"], ["data", "signal"], ["network"], ["signal"]],
     singles: ["signal", "network", "simlock", "lock", "locked"],
-    collapsed: ["networksignal", "datasignal", "signal", "network"],
+    collapsed: ["networksignal", "datasignal", "signal", "network", "globelock", "smartlock", "tntlock", "globeonly", "smartonly", "tntonly", "smarttntonly"],
     positives: [],
-    negatives: ["no", "not", "wala", "wla", "di", "dili", "dli", "indi", "lock", "locked", "globe", "smart", "tnt"],
+    negatives: ["no", "not", "wala", "walang", "wla", "di", "dili", "dli", "indi", "lock", "locked", "globe", "smart", "tnt"],
     allowFallbackWorking: false
   },
   wifi_only: {
@@ -92,7 +81,7 @@ const FEATURE_RULES = {
     singles: ["wifi", "wifionly"],
     collapsed: ["wifionly"],
     positives: [],
-    negatives: ["only"],
+    negatives: ["only", "lang"],
     allowFallbackWorking: false
   },
   battery: {
@@ -304,10 +293,29 @@ export function detectIssues(text) {
 }
 
 export function hasIcloudRisk(text) {
-  const s = String(text || "").toLowerCase();
-  if (!s) return false;
+  const raw = String(text || "");
+  if (!raw) return false;
+  const s = raw.toLowerCase();
+  const collapsed = s.replace(/[^a-z0-9]+/g, "");
 
-  if (/\b(pa\s*)?bypass\b/i.test(s) || /\bbypassed\b/i.test(s)) return true;
+  const bypassVariants = [
+    /\b(?:pa\s*)?bypa(?:ss|s)(?:ed)?\b/i,
+    /\bby\s*pass(?:ed)?\b/i,
+    /\bbaypas(?:sed)?\b/i,
+    /\bpabypa?s\b/i,
+    /\bpabyba?s\b/i
+  ];
+  const bypassCollapsed = [
+    "bypass",
+    "bypas",
+    "baypas",
+    "pabypass",
+    "pabypas",
+    "pabybas"
+  ];
+
+  if (bypassVariants.some((re) => re.test(s))) return true;
+  if (bypassCollapsed.some((token) => collapsed.includes(token))) return true;
 
   const resetClean =
     /\b(safe\s+to\s+reset|unli\s*reset)\b/i.test(s) &&
