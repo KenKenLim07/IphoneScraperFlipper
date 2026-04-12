@@ -54,6 +54,11 @@ function parseModelFamily(text) {
     const n = Number.parseInt(num[1], 10);
     if (Number.isFinite(n) && n >= 7 && n <= 20) return `iphone_${n}`;
   }
+  const ipShort = /\bip\s*(\d{1,2})\b/i.exec(s) || /\bip(\d{1,2})\b/i.exec(s);
+  if (ipShort) {
+    const n = Number.parseInt(ipShort[1], 10);
+    if (Number.isFinite(n) && n >= 7 && n <= 20) return `iphone_${n}`;
+  }
 
   // iPhone XR / XS / X (order matters: XS before X).
   if (/\biphone\s*xr\b/i.test(s)) return "iphone_xr";
@@ -235,9 +240,10 @@ function riskCostFromText(text) {
   const camera = issues.camera_issue ? 2000 : 0;
   const display = issues.lcd_replaced ? 2500 : issues.screen_issue ? 2500 : 0;
   const backGlass = issues.back_glass_cracked ? 1500 : issues.back_glass_replaced ? 800 : 0;
+  const button = issues.button_issue ? 1000 : 0;
   const battery = cost(/\bbattery\b.*\b(issue|problem|broken|service)\b/i, 1500);
 
-  return faceId + trutone + camera + display + backGlass + battery;
+  return faceId + trutone + camera + display + backGlass + button + battery;
 }
 
 function formatPhpCompact(v) {
@@ -262,7 +268,7 @@ async function main() {
   const cutoffMs = nowMs - windowMs;
   const limit = Math.max(100, Number.parseInt(process.env.DEALS_MAX_LISTINGS || "5000", 10) || 5000);
   let compMin = parseBoundEnv("DEALS_COMP_PRICE_MIN_PHP", 2000);
-  let compMax = parseBoundEnv("DEALS_COMP_PRICE_MAX_PHP", 150000);
+  let compMax = parseBoundEnv("DEALS_COMP_PRICE_MAX_PHP", 130000);
   if (compMax < compMin) {
     const tmp = compMin;
     compMin = compMax;
@@ -286,16 +292,32 @@ async function main() {
 
   const featuresById = new Map();
   const candidates = [];
+  let skippedNoId = 0;
+  let skippedNoModel = 0;
+  const skippedNoModelSamples = [];
 
   for (const l of listings) {
     const listingId = String(l.listing_id || "");
-    if (!listingId) continue;
+    if (!listingId) {
+      skippedNoId += 1;
+      continue;
+    }
     const title = cleanText(l.title) || "";
     const desc = cleanText(l.description) || "";
     const text = `${title}\n${desc}`;
 
     const modelFamily = parseModelFamily(text);
-    if (!modelFamily) continue;
+    if (!modelFamily) {
+      skippedNoModel += 1;
+      if (skippedNoModelSamples.length < 5) {
+        skippedNoModelSamples.push({
+          listing_id: listingId,
+          title: title || "n/a",
+          desc_preview: (desc || "").slice(0, 120) || "n/a"
+        });
+      }
+      continue;
+    }
 
     const variant = parseVariant(text, modelFamily);
     const storageGb = parseStorageGb(text);
@@ -309,7 +331,9 @@ async function main() {
 
     if (debugListingId && debugListingId === listingId) {
       const reasons = buildDebugReasons(text);
+      const icloudRisk = hasIcloudRisk(text);
       console.log(`[DEBUG] issues_reasons listing_id=${listingId} ${JSON.stringify(reasons)}`);
+      console.log(`[DEBUG] listing_id=${listingId} icloud_risk=${icloudRisk}`);
       console.log(
         `[DEBUG] listing_id=${listingId} battery_health=${batteryHealth ?? "n/a"} storage_gb=${storageGb ?? "n/a"} desc_len=${descLen} ` +
           `text_preview="${cleanText(text)?.slice(0, 200) || "n/a"}"`
@@ -330,6 +354,7 @@ async function main() {
       screen_issue: issues.screen_issue || null,
       network_locked: issues.network_locked || null,
       wifi_only: issues.wifi_only || null,
+      button_issue: issues.button_issue || null,
       no_description: noDescription || null
     };
 
@@ -372,6 +397,26 @@ async function main() {
       c.listing_time_ms != null &&
       c.listing_time_ms >= cutoffMs
   );
+
+  const pricedCount = candidates.filter((c) => c.price_php != null && Number.isFinite(c.price_php)).length;
+  const noPriceCount = candidates.length - pricedCount;
+  const timeCount = candidates.filter((c) => c.listing_time_ms != null).length;
+  const noTimeCount = candidates.length - timeCount;
+  const oldTimeCount = candidates.filter(
+    (c) => c.price_php != null && Number.isFinite(c.price_php) && c.listing_time_ms != null && c.listing_time_ms < cutoffMs
+  ).length;
+
+  console.log(
+    `[INFO] deals_filter total=${listings.length} skipped_no_id=${skippedNoId} skipped_no_model=${skippedNoModel} ` +
+      `candidates=${candidates.length} priced=${pricedCount} no_price=${noPriceCount} ` +
+      `has_time=${timeCount} no_time=${noTimeCount} old_post=${oldTimeCount} recent_priced=${recentPriced.length}`
+  );
+  if (skippedNoModelSamples.length) {
+    console.log(
+      `[INFO] deals_filter_no_model_samples count=${skippedNoModelSamples.length} ` +
+        `samples=${JSON.stringify(skippedNoModelSamples)}`
+    );
+  }
 
   const groupKey = (region, modelFamily, variant, storageGb) =>
     `${region || "ALL"}|${modelFamily || "unknown"}|${variant || "base"}|${storageGb ?? "unknown"}`;
@@ -445,7 +490,9 @@ async function main() {
     const hasMinorIssue = !!(
       c.risk_flags?.trutone_missing ||
       c.risk_flags?.back_glass_replaced ||
-      c.risk_flags?.back_glass_cracked
+      c.risk_flags?.back_glass_cracked ||
+      c.risk_flags?.battery_replaced ||
+      c.risk_flags?.button_issue
     );
     const lowConfidenceComps = sampleSize < 10;
     const noDesc = !!c.risk_flags?.no_description;
@@ -477,42 +524,60 @@ async function main() {
         : null;
 
     const reasons = [];
+    const addReason = (msg) => {
+      if (!reasons.includes(msg)) reasons.push(msg);
+    };
     if (hardBlock) {
-      if (c.risk_flags?.wanted_post) reasons.push("❌ Looks like a buyer / wanted post (LF/WTB/Buying)");
-      if (c.risk_flags?.icloud_lock) reasons.push("❌ High risk keywords found (iCloud/locked/bypass/reset/not safe to reset)");
+      if (c.risk_flags?.wanted_post) addReason("❌ Looks like a buyer / wanted post (LF/WTB/Buying)");
+      if (c.risk_flags?.icloud_lock) addReason("❌ High risk keywords found (iCloud/locked/bypass/reset/not safe to reset)");
     }
 
     if (!hardBlock && belowMarketPct != null) {
       const pct = Math.round(belowMarketPct * 100);
-      reasons.push(`${pct}% below market (p50 ₱${formatPhpCompact(p50)})`);
+      addReason(`${pct}% below market (p50 ₱${formatPhpCompact(p50)})`);
     }
 
     if (!hardBlock && baseScore !== dealScore && cap) {
       if (hasCriticalIssue) {
-        if (c.risk_flags?.face_id_not_working) reasons.push("⚠️ Face ID not working (score capped to C)");
-        if (c.risk_flags?.screen_issue) reasons.push("⚠️ Screen issue detected (score capped to C)");
-        if (c.risk_flags?.camera_issue) reasons.push("⚠️ Camera issue detected (score capped to C)");
-        if (c.risk_flags?.lcd_replaced) reasons.push("⚠️ LCD replaced (score capped to C)");
-        if (c.risk_flags?.network_locked) reasons.push("⚠️ Network-locked (Globe/Smart/SIM lock) (score capped to C)");
-        if (c.risk_flags?.wifi_only) reasons.push("⚠️ WiFi-only (no cellular) (score capped to C)");
+        if (c.risk_flags?.face_id_not_working) addReason("⚠️ Face ID not working (score capped to C)");
+        if (c.risk_flags?.screen_issue) addReason("⚠️ Screen issue detected (score capped to C)");
+        if (c.risk_flags?.camera_issue) addReason("⚠️ Camera issue detected (score capped to C)");
+        if (c.risk_flags?.lcd_replaced) addReason("⚠️ LCD replaced (score capped to C)");
+        if (c.risk_flags?.network_locked) addReason("⚠️ Network-locked (Globe/Smart/SIM lock) (score capped to C)");
+        if (c.risk_flags?.wifi_only) addReason("⚠️ WiFi-only (no cellular) (score capped to C)");
       } else if (hasMinorIssue) {
-        if (c.risk_flags?.trutone_missing) reasons.push("⚠️ TrueTone missing (score capped to B)");
-        if (c.risk_flags?.back_glass_replaced) reasons.push("⚠️ Back glass replaced (score capped to B)");
-        if (c.risk_flags?.back_glass_cracked) reasons.push("⚠️ Back glass cracked (score capped to B)");
+        if (c.risk_flags?.trutone_missing) addReason("⚠️ TrueTone missing (score capped to B)");
+        if (c.risk_flags?.back_glass_replaced) addReason("⚠️ Back glass replaced (score capped to B)");
+        if (c.risk_flags?.back_glass_cracked) addReason("⚠️ Back glass cracked (score capped to B)");
+        if (c.risk_flags?.battery_replaced) addReason("⚠️ Battery replaced (score capped to B)");
+        if (c.risk_flags?.button_issue) addReason("⚠️ Button issue (volume/power) (score capped to B)");
       }
 
-      if (lowConfidenceComps) reasons.push(`⚠️ Low confidence comps (n=${sampleSize}, score capped to C)`);
-      if (noDesc) reasons.push("⚠️ No/short description (unknown condition, score capped to C)");
+      if (lowConfidenceComps) addReason(`⚠️ Low confidence comps (n=${sampleSize}, score capped to C)`);
+      if (noDesc) addReason("⚠️ No/short description (unknown condition, score capped to C)");
     } else {
-      if (!hardBlock && lowConfidenceComps) reasons.push(`⚠️ Low confidence comps (n=${sampleSize})`);
-      if (!hardBlock && noDesc) reasons.push("⚠️ No/short description (unknown condition)");
+      if (!hardBlock && lowConfidenceComps) addReason(`⚠️ Low confidence comps (n=${sampleSize})`);
+      if (!hardBlock && noDesc) addReason("⚠️ No/short description (unknown condition)");
     }
 
     if (!hardBlock && riskCost > 0) {
-      reasons.push(`Risk cost applied: ₱${formatPhpCompact(riskCost)}`);
+      addReason(`Risk cost applied: ₱${formatPhpCompact(riskCost)}`);
     }
 
-    reasons.push(`Confidence: ${confidence} (n=${sampleSize} comps)`);
+    // Always surface detected red flags, even when critical issues exist.
+    if (c.risk_flags?.face_id_not_working) addReason("⚠️ Face ID not working");
+    if (c.risk_flags?.screen_issue) addReason("⚠️ Screen issue detected");
+    if (c.risk_flags?.camera_issue) addReason("⚠️ Camera issue detected");
+    if (c.risk_flags?.lcd_replaced) addReason("⚠️ LCD replaced");
+    if (c.risk_flags?.network_locked) addReason("⚠️ Network-locked (Globe/Smart/SIM lock)");
+    if (c.risk_flags?.wifi_only) addReason("⚠️ WiFi-only (no cellular)");
+    if (c.risk_flags?.trutone_missing) addReason("⚠️ TrueTone missing");
+    if (c.risk_flags?.back_glass_replaced) addReason("⚠️ Back glass replaced");
+    if (c.risk_flags?.back_glass_cracked) addReason("⚠️ Back glass cracked");
+    if (c.risk_flags?.battery_replaced) addReason("⚠️ Battery replaced");
+    if (c.risk_flags?.button_issue) addReason("⚠️ Button issue (volume/power)");
+
+    addReason(`Confidence: ${confidence} (n=${sampleSize} comps)`);
 
     const ageMs = c.listing_time_ms != null ? nowMs - c.listing_time_ms : null;
     if (ageMs != null && Number.isFinite(ageMs)) {

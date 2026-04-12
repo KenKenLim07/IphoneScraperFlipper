@@ -24,7 +24,7 @@ function parseKeywordList(value) {
 }
 
 const IPHONE_MODEL_RE =
-  /\biphone\s*(se|x|xs|max|xr|6s?|7|8|11|12|13|14|15|16|17)\b/i;
+  /\biphone\s*(se|x|xs|max|xr|7|8|11|12|13|14|15|16|17)\b/i;
 
 function hasIphoneModel(title, description) {
   const text = `${title || ""} ${description || ""}`.trim();

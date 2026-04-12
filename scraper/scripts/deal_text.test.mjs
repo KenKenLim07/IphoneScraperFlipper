@@ -96,3 +96,37 @@ test("wala signal is detected", () => {
     { network_locked: true }
   );
 });
+
+test("button issues are detected from volume/power mentions", () => {
+  const issues = detectIssues("volume down not working");
+  assert.deepEqual(
+    pick(issues, ["button_issue"]),
+    { button_issue: true }
+  );
+
+  const issues2 = detectIssues("power button issue");
+  assert.deepEqual(
+    pick(issues2, ["button_issue"]),
+    { button_issue: true }
+  );
+
+  const issues3 = detectIssues("volume");
+  assert.deepEqual(
+    pick(issues3, ["button_issue"]),
+    { button_issue: true }
+  );
+});
+
+test("button mentions marked working do not flag", () => {
+  const issues = detectIssues("volume up working");
+  assert.deepEqual(
+    pick(issues, ["button_issue"]),
+    { button_issue: false }
+  );
+
+  const issues2 = detectIssues("power button ok");
+  assert.deepEqual(
+    pick(issues2, ["button_issue"]),
+    { button_issue: false }
+  );
+});

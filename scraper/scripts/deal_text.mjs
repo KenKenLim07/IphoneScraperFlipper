@@ -49,7 +49,7 @@ const FEATURE_RULES = {
     singles: ["screen", "display"],
     collapsed: ["screen", "display"],
     positives: [],
-    negatives: ["issue", "problem", "broken", "line", "lines", "green", "pink", "flicker", "burn", "dead", "touch", "ghost"],
+    negatives: ["issue", "problem", "broken", "line", "lines", "green", "pink", "flicker", "burn", "dead", "ghost"],
     allowFallbackWorking: false
   },
   lcd: {
@@ -91,6 +91,34 @@ const FEATURE_RULES = {
     positives: [],
     negatives: ["replace", "replaced", "replacement", "palit", "pinalitan", "ilis", "isli"],
     allowFallbackWorking: false
+  },
+  button: {
+    sequences: [
+      ["volume", "up"],
+      ["volume", "down"],
+      ["volume", "button"],
+      ["power", "button"],
+      ["power", "key"],
+      ["lock", "button"],
+      ["side", "button"]
+    ],
+    singles: ["volume", "power", "lock", "side", "key"],
+    collapsed: [
+      "volume",
+      "volumeup",
+      "volumedown",
+      "volup",
+      "voldown",
+      "volumebutton",
+      "powerbutton",
+      "powerkey",
+      "lockbutton",
+      "sidebutton"
+    ],
+    positives: ["working", "ok", "okay", "functional", "gagana", "gana", "naga"],
+    negatives: ["issue", "problem", "broken", "defect", "dead", "notwork", "notworking", "guba"],
+    allowFallbackWorking: false,
+    mentionImpliesIssue: true
   }
 };
 
@@ -164,22 +192,41 @@ function collapsedHasAny(collapsed, needles) {
   return (needles || []).some((n) => n && collapsed.includes(n));
 }
 
-function collapsedHasNegatives(collapsed, negatives) {
+function collapsedHasNegativeNear(collapsed, feature, negatives) {
+  const maxDist = 12;
+  const featIdx = collapsed.indexOf(feature);
+  if (featIdx === -1) return false;
   for (const n of negatives || []) {
     if (!n) continue;
-    if (n === "issue") {
-      const stripped = collapsed.replace(/noissue/g, "");
-      if (stripped.includes("issue")) return true;
-      continue;
+    let idx = collapsed.indexOf(n);
+    while (idx !== -1) {
+      if (n === "issue") {
+        if (idx >= 2 && collapsed.slice(idx - 2, idx) === "no") {
+          idx = collapsed.indexOf(n, idx + n.length);
+          continue;
+        }
+      }
+      if (idx < featIdx) {
+        idx = collapsed.indexOf(n, idx + n.length);
+        continue;
+      }
+      if (Math.abs(idx - featIdx) <= maxDist) return true;
+      idx = collapsed.indexOf(n, idx + n.length);
     }
-    if (collapsed.includes(n)) return true;
   }
   return false;
 }
 
-function collapsedHasNegationPrefix(collapsed, feature) {
-  const prefixes = ["no", "not", "wala", "wla", "di", "dili", "dli", "indi", "way", "waay"];
-  return prefixes.some((p) => collapsed.includes(`${p}${feature}`));
+function collapsedHasNegationPrefix(collapsed, feature, negatives) {
+  for (const n of negatives || []) {
+    if (!n) continue;
+    const needle = `${n}${feature}`;
+    const idx = collapsed.indexOf(needle);
+    if (idx === -1) continue;
+    if (n === "issue" && idx >= 2 && collapsed.slice(idx - 2, idx) === "no") continue;
+    return true;
+  }
+  return false;
 }
 
 function collapsedHasPositiveNear(collapsed, feature, positives) {
@@ -198,7 +245,7 @@ function hasAllWorkingPhrase(lower) {
   return ALL_WORKING_PHRASES.some((p) => normalizeLower(lower).includes(p));
 }
 
-function hasNegTokenNear(tokens, positions, tokenSet, window = 3) {
+function hasNegTokenNear(tokens, positions, tokenSet, window = 2) {
   for (const pos of positions) {
     const start = Math.max(0, pos - window);
     const end = Math.min(tokens.length - 1, pos + window);
@@ -224,15 +271,26 @@ function evaluateFeature(views, rule) {
 
   const collapsedNeg =
     featureHit &&
-    ((rule.collapsed || []).some((c) => collapsedHasNegationPrefix(views.collapsed, c)) ||
-      collapsedHasNegatives(views.collapsed, rule.negatives || []));
+    ((rule.collapsed || []).some((c) => collapsedHasNegationPrefix(views.collapsed, c, rule.negatives || [])) ||
+      (rule.collapsed || []).some((c) => collapsedHasNegativeNear(views.collapsed, c, rule.negatives || [])));
   const collapsedPos =
     featureHit &&
     ((rule.collapsed || []).some((c) => collapsedHasPositiveNear(views.collapsed, c, rule.positives || [])) ||
       collapsedHasAny(views.collapsed, rule.positives || []));
 
-  const negative = negTokenHit || collapsedNeg;
-  const positive = !negative && (posTokenHit || collapsedPos);
+  let negative = negTokenHit || collapsedNeg;
+  let positive = !negative && (posTokenHit || collapsedPos);
+
+  if (rule.mentionImpliesIssue && featureHit) {
+    const hasNegation = negTokenHit || collapsedNeg;
+    if ((posTokenHit || collapsedPos) && !hasNegation) {
+      negative = false;
+      positive = true;
+    } else {
+      negative = true;
+      positive = false;
+    }
+  }
 
   return { negative, positive };
 }
@@ -265,22 +323,53 @@ export function detectIssues(text) {
   const network = evaluateFeature(views, FEATURE_RULES.network);
   const wifi = evaluateFeature(views, FEATURE_RULES.wifi_only);
   const battery = evaluateFeature(views, FEATURE_RULES.battery);
+  const button = evaluateFeature(views, FEATURE_RULES.button);
   const issueHits = scanIssueLines(views.lower);
 
   const allWorking = hasAllWorkingPhrase(views.lower);
 
-  const faceWorking = face.positive ? true : !face.negative && allWorking ? true : null;
-  const truetoneWorking = truetone.positive ? true : !truetone.negative && allWorking ? true : null;
+  const faceWorkingPhrase =
+    /\bface\s*id\b[^\n]{0,24}\b(working|wrking|ok|okay|functional|gagana|naga\s*gana|gana)\b/i.test(views.lower);
+  const faceNegPhrase =
+    /\b(no|not|wala|wla|di|dili|dli|indi|way|waay)\s+face\s*id\b/i.test(views.lower) ||
+    /\bface\s*id\b[^\n]{0,24}\b(not\s*work(?:ing)?|issue|problem|broken|defect|dead|guba)\b/i.test(views.lower) ||
+    ["faceid", "face_id"].some((tok) => {
+      const idx = views.collapsed.indexOf(tok);
+      if (idx === -1) return false;
+      const prefixes = ["no", "not", "wala", "wla", "di", "dili", "dli", "indi", "way", "waay"];
+      return prefixes.some((p) => {
+        const pIdx = views.collapsed.indexOf(p);
+        return pIdx !== -1 && Math.abs(pIdx - idx) <= 6;
+      });
+    });
+  const truetoneNoPhrase =
+    /\b(no|not|wala|wla|di|dili|dli|indi|way|waay)\s+(?:true\s*tone|truetone|trutone|trueton)\b/i.test(views.lower);
+
+  const truetoneMissing = !!truetone.negative || truetoneNoPhrase;
+  const faceNotWorking = !!face.negative && faceNegPhrase;
+  const faceWorking =
+    faceWorkingPhrase && !faceNegPhrase
+      ? true
+      : face.positive
+        ? true
+        : !faceNotWorking && allWorking
+          ? true
+          : null;
+  const truetoneWorking = truetone.positive ? true : !truetoneMissing && allWorking ? true : null;
+
+  const touchIssue =
+    /\b(no|not|wala|wla|di|dili|dli|indi)\s+touch\b/i.test(views.lower) ||
+    /\btouch\b[^\n]{0,12}\b(not\s*work(?:ing)?|issue|problem|broken|dead|defect)\b/i.test(views.lower);
 
   const cameraNegative = camera.negative || issueHits.camera;
-  const screenNegative = screen.negative || issueHits.screen;
+  const screenNegative = screen.negative || issueHits.screen || touchIssue;
   const networkNegative = network.negative || issueHits.network;
 
   return {
     face_id_working: faceWorking,
-    face_id_not_working: !!face.negative,
+    face_id_not_working: !!faceNotWorking,
     trutone_working: truetoneWorking,
-    trutone_missing: !!truetone.negative,
+    trutone_missing: !!truetoneMissing,
     lcd_replaced: !!lcd.negative,
     back_glass_replaced: !!back.negative && views.lower.includes("replace"),
     back_glass_cracked: !!back.negative && (views.lower.includes("crack") || views.lower.includes("buka") || views.lower.includes("basag")),
@@ -288,7 +377,8 @@ export function detectIssues(text) {
     camera_issue: cameraNegative,
     screen_issue: screenNegative,
     network_locked: networkNegative,
-    wifi_only: !!wifi.negative && views.lower.includes("wifi")
+    wifi_only: !!wifi.negative && views.lower.includes("wifi"),
+    button_issue: !!button.negative
   };
 }
 
