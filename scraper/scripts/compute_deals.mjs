@@ -18,6 +18,13 @@ function requireEnv(name) {
   return value;
 }
 
+function parseBoundEnv(name, fallback) {
+  const raw = cleanText(process.env[name]);
+  if (!raw) return fallback;
+  const num = Number.parseFloat(raw);
+  return Number.isFinite(num) && num > 0 ? num : fallback;
+}
+
 function parseIsoMs(value) {
   const s = cleanText(value);
   if (!s) return null;
@@ -254,6 +261,13 @@ async function main() {
   const windowMs = windowDays * 24 * 60 * 60 * 1000;
   const cutoffMs = nowMs - windowMs;
   const limit = Math.max(100, Number.parseInt(process.env.DEALS_MAX_LISTINGS || "5000", 10) || 5000);
+  let compMin = parseBoundEnv("DEALS_COMP_PRICE_MIN_PHP", 2000);
+  let compMax = parseBoundEnv("DEALS_COMP_PRICE_MAX_PHP", 150000);
+  if (compMax < compMin) {
+    const tmp = compMin;
+    compMin = compMax;
+    compMax = tmp;
+  }
 
   console.log(`[INFO] deals_start window_days=${windowDays} max_listings=${limit}`);
 
@@ -393,16 +407,30 @@ async function main() {
       }
     }
 
-    const prices = comps
+    const rawPrices = comps
       .map((x) => x.price_php)
       .filter((p) => p != null && Number.isFinite(p))
       .map((p) => Number(p))
       .sort((a, b) => a - b);
 
-    const sampleSize = prices.length;
-    const p25 = sampleSize >= 3 ? quantile(prices, 0.25) : null;
-    const p50 = sampleSize >= 3 ? quantile(prices, 0.5) : null;
-    const p75 = sampleSize >= 3 ? quantile(prices, 0.75) : null;
+    const sanityPrices = rawPrices.filter((p) => p >= compMin && p <= compMax);
+    let iqrPrices = sanityPrices;
+    if (sanityPrices.length >= 3) {
+      const p25San = quantile(sanityPrices, 0.25);
+      const p75San = quantile(sanityPrices, 0.75);
+      if (p25San != null && p75San != null) {
+        const iqr = p75San - p25San;
+        const lower = p25San - 1.5 * iqr;
+        const upper = p75San + 1.5 * iqr;
+        iqrPrices = sanityPrices.filter((p) => p >= lower && p <= upper);
+        if (iqrPrices.length < 3) iqrPrices = sanityPrices;
+      }
+    }
+
+    const sampleSize = iqrPrices.length;
+    const p25 = sampleSize >= 3 ? quantile(iqrPrices, 0.25) : null;
+    const p50 = sampleSize >= 3 ? quantile(iqrPrices, 0.5) : null;
+    const p75 = sampleSize >= 3 ? quantile(iqrPrices, 0.75) : null;
 
     const asking = c.price_php != null && Number.isFinite(c.price_php) ? Number(c.price_php) : null;
     const hardBlock = !!(c.risk_flags?.icloud_lock || c.risk_flags?.wanted_post);
