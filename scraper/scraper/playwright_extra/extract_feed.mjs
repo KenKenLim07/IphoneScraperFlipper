@@ -673,6 +673,25 @@ export function installNetworkListingCollector(page, { log, saveNetworkRaw, runI
   };
 }
 
+function sortByNewest(rows) {
+  const withIndex = (rows || []).map((row, idx) => ({ row, idx }));
+  const toTs = (value) => {
+    const ts = Date.parse(String(value || ""));
+    return Number.isFinite(ts) ? ts : null;
+  };
+  withIndex.sort((a, b) => {
+    const aPosted = toTs(a.row?.posted_at);
+    const bPosted = toTs(b.row?.posted_at);
+    const aScraped = toTs(a.row?.scraped_at);
+    const bScraped = toTs(b.row?.scraped_at);
+    const aTs = aPosted ?? aScraped ?? 0;
+    const bTs = bPosted ?? bScraped ?? 0;
+    if (bTs !== aTs) return bTs - aTs;
+    return a.idx - b.idx;
+  });
+  return withIndex.map((item) => item.row);
+}
+
 export async function extractDiscoveryRows(page, opts) {
   const {
     maxCards,
@@ -815,7 +834,7 @@ export async function extractDiscoveryRows(page, opts) {
       scraped_at: scrapedAt,
       run_id: runId
     }));
-    const fromNetwork = fromNetworkAll.slice(0, maxCards);
+    const fromNetwork = sortByNewest(fromNetworkAll).slice(0, maxCards);
 
     const merged = new Map();
     for (const row of fromNetwork) {
@@ -915,7 +934,7 @@ export async function extractDiscoveryRows(page, opts) {
       if (logEnabled && overlayed) log(`[INFO] data_overlay=dom_price updated=${overlayed}`);
     }
 
-    rows = Array.from(merged.values()).slice(0, maxCards);
+    rows = sortByNewest(Array.from(merged.values())).slice(0, maxCards);
     cardsSeen = rows.length;
   } else {
     if (logEnabled) log("[INFO] data_source=dom");
@@ -929,7 +948,7 @@ export async function extractDiscoveryRows(page, opts) {
       log,
       seenInRun
     });
-    rows = dom.rows;
+    rows = sortByNewest(dom.rows).slice(0, maxCards);
     cardsSeen = dom.cardsSeen;
     dupListingIdsSkipped = dom.dupListingIdsSkipped;
   }
