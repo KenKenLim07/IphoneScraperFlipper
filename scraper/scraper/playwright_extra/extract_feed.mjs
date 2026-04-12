@@ -18,6 +18,11 @@ import {
   sleep
 } from "./utils.mjs";
 
+const DISCOVERY_SELLER_BLOCKLIST = new Set([
+  "100037405695171",
+  "100094736079558"
+]);
+
 function envInt(name, fallback) {
   const raw = String(process.env[name] || "").trim();
   if (!raw) return fallback;
@@ -407,6 +412,10 @@ function collectNetworkListings(payload, outMap) {
 
     const candidate = normalizeNetworkListing(current);
     if (candidate && !outMap.has(candidate.listing_id)) {
+      const sellerId = cleanText(candidate.listing_seller_id);
+      if (sellerId && DISCOVERY_SELLER_BLOCKLIST.has(sellerId)) {
+        continue;
+      }
       outMap.set(candidate.listing_id, candidate);
       if (outMap.size >= NETWORK_MAX_ITEMS) return;
     }
@@ -500,6 +509,10 @@ async function extractFromDom(page, { maxCards, scrollPages, scrollDelayMs, runI
         `[INFO] row_extracted listing_id=${listingId} title=${title || "n/a"} price=${priceRaw || "n/a"} ` +
           `location=${locationRaw || "n/a"}`
       );
+    }
+    const sellerId = cleanText(row.listing_seller_id);
+    if (sellerId && DISCOVERY_SELLER_BLOCKLIST.has(sellerId)) {
+      continue;
     }
     seen.set(listingId, {
       listing_id: listingId,
