@@ -5,6 +5,16 @@ const NEG_TOKENS = new Set([
   "issue", "problem", "broken", "defect", "dead", "disabled", "error", "fail", "failed"
 ]);
 
+const ISSUE_LINE_RE = /^\s*issue\s*[:\-]/i;
+
+const NETWORK_ALIASES = ["network signal", "data signal", "signal", "network"];
+const NETWORK_NEGATIVE_ALIASES = ["no signal", "wala signal", "walang signal"];
+
+const CAMERA_ALIASES = ["camera", "back cam", "rear cam", "front cam", "cam"];
+const CAMERA_NEGATIVE_ALIASES = ["blurd", "blurry", "blurred", "blur", "fog"];
+
+const SCREEN_ALIASES = ["screen", "display", "lcd"];
+
 const POS_TOKENS = new Set([
   "working", "work", "ok", "okay", "good", "goods", "gagana", "naga", "gana",
   "hamis", "hamis2", "makinis", "orig", "original", "clean", "fresh", "unli",
@@ -38,11 +48,11 @@ const FEATURE_RULES = {
     allowFallbackWorking: true
   },
   camera: {
-    sequences: [["camera"]],
-    singles: ["camera"],
-    collapsed: ["camera"],
+    sequences: [["camera"], ["back", "cam"], ["rear", "cam"], ["front", "cam"]],
+    singles: ["camera", "cam"],
+    collapsed: ["camera", "backcam", "rearcam", "frontcam", "cam"],
     positives: ["working", "ok", "okay", "clear", "good"],
-    negatives: ["issue", "problem", "broken", "defect", "dead", "blur", "fog"],
+    negatives: ["issue", "problem", "broken", "defect", "dead", "blur", "blurd", "blurry", "blurred", "fog"],
     allowFallbackWorking: false
   },
   screen: {
@@ -70,11 +80,11 @@ const FEATURE_RULES = {
     allowFallbackWorking: false
   },
   network: {
-    sequences: [["network"], ["sim", "lock"], ["network", "lock"]],
-    singles: ["lock", "locked", "simlock"],
-    collapsed: ["networklock", "simlock"],
+    sequences: [["network", "signal"], ["data", "signal"], ["network"], ["signal"]],
+    singles: ["signal", "network", "simlock", "lock", "locked"],
+    collapsed: ["networksignal", "datasignal", "signal", "network"],
     positives: [],
-    negatives: ["lock", "locked", "globe", "smart", "tnt"],
+    negatives: ["no", "not", "wala", "wla", "di", "dili", "dli", "indi", "lock", "locked", "globe", "smart", "tnt"],
     allowFallbackWorking: false
   },
   wifi_only: {
@@ -101,7 +111,7 @@ function normalizeLower(text) {
 
 function buildViews(text) {
   const raw = String(text || "");
-  const lower = normalizeLower(raw);
+  const lower = raw.toLowerCase();
   const collapsed = lower.replace(/[^a-z0-9]+/g, "");
   const tokens = lower.split(/[^a-z0-9]+/).filter(Boolean);
   return { raw, lower, collapsed, tokens };
@@ -145,8 +155,37 @@ function hasTokenNear(tokens, positions, tokenSet, window = 3) {
   return false;
 }
 
+function lineHasAny(line, needles) {
+  return needles.some((n) => line.includes(n));
+}
+
+function scanIssueLines(lower) {
+  const hits = { camera: false, screen: false, network: false };
+  const lines = lower.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    if (!ISSUE_LINE_RE.test(line)) continue;
+    if (lineHasAny(line, CAMERA_ALIASES)) hits.camera = true;
+    if (lineHasAny(line, SCREEN_ALIASES)) hits.screen = true;
+    if (lineHasAny(line, NETWORK_ALIASES)) hits.network = true;
+  }
+  return hits;
+}
+
 function collapsedHasAny(collapsed, needles) {
   return (needles || []).some((n) => n && collapsed.includes(n));
+}
+
+function collapsedHasNegatives(collapsed, negatives) {
+  for (const n of negatives || []) {
+    if (!n) continue;
+    if (n === "issue") {
+      const stripped = collapsed.replace(/noissue/g, "");
+      if (stripped.includes("issue")) return true;
+      continue;
+    }
+    if (collapsed.includes(n)) return true;
+  }
+  return false;
 }
 
 function collapsedHasNegationPrefix(collapsed, feature) {
@@ -167,7 +206,21 @@ function collapsedHasPositiveNear(collapsed, feature, positives) {
 }
 
 function hasAllWorkingPhrase(lower) {
-  return ALL_WORKING_PHRASES.some((p) => lower.includes(p));
+  return ALL_WORKING_PHRASES.some((p) => normalizeLower(lower).includes(p));
+}
+
+function hasNegTokenNear(tokens, positions, tokenSet, window = 3) {
+  for (const pos of positions) {
+    const start = Math.max(0, pos - window);
+    const end = Math.min(tokens.length - 1, pos + window);
+    for (let i = start; i <= end; i++) {
+      const token = tokens[i];
+      if (!tokenSet.has(token)) continue;
+      if (token === "issue" && tokens[i - 1] === "no") continue;
+      return true;
+    }
+  }
+  return false;
 }
 
 function evaluateFeature(views, rule) {
@@ -177,13 +230,13 @@ function evaluateFeature(views, rule) {
   const collapsedFeatureHit = collapsedHasAny(views.collapsed, rule.collapsed || []);
   const featureHit = positions.length > 0 || collapsedFeatureHit;
 
-  const negTokenHit = positions.length ? hasTokenNear(views.tokens, positions, negSet, 3) : false;
+  const negTokenHit = positions.length ? hasNegTokenNear(views.tokens, positions, negSet, 3) : false;
   const posTokenHit = positions.length ? hasTokenNear(views.tokens, positions, posSet, 3) : false;
 
   const collapsedNeg =
     featureHit &&
     ((rule.collapsed || []).some((c) => collapsedHasNegationPrefix(views.collapsed, c)) ||
-      collapsedHasAny(views.collapsed, rule.negatives || []));
+      collapsedHasNegatives(views.collapsed, rule.negatives || []));
   const collapsedPos =
     featureHit &&
     ((rule.collapsed || []).some((c) => collapsedHasPositiveNear(views.collapsed, c, rule.positives || [])) ||
@@ -223,11 +276,16 @@ export function detectIssues(text) {
   const network = evaluateFeature(views, FEATURE_RULES.network);
   const wifi = evaluateFeature(views, FEATURE_RULES.wifi_only);
   const battery = evaluateFeature(views, FEATURE_RULES.battery);
+  const issueHits = scanIssueLines(views.lower);
 
   const allWorking = hasAllWorkingPhrase(views.lower);
 
   const faceWorking = face.positive ? true : !face.negative && allWorking ? true : null;
   const truetoneWorking = truetone.positive ? true : !truetone.negative && allWorking ? true : null;
+
+  const cameraNegative = camera.negative || issueHits.camera;
+  const screenNegative = screen.negative || issueHits.screen;
+  const networkNegative = network.negative || issueHits.network;
 
   return {
     face_id_working: faceWorking,
@@ -238,11 +296,48 @@ export function detectIssues(text) {
     back_glass_replaced: !!back.negative && views.lower.includes("replace"),
     back_glass_cracked: !!back.negative && (views.lower.includes("crack") || views.lower.includes("buka") || views.lower.includes("basag")),
     battery_replaced: !!battery.negative,
-    camera_issue: !!camera.negative,
-    screen_issue: !!screen.negative,
-    network_locked: !!network.negative,
+    camera_issue: cameraNegative,
+    screen_issue: screenNegative,
+    network_locked: networkNegative,
     wifi_only: !!wifi.negative && views.lower.includes("wifi")
   };
+}
+
+export function hasIcloudRisk(text) {
+  const s = String(text || "").toLowerCase();
+  if (!s) return false;
+
+  if (/\b(pa\s*)?bypass\b/i.test(s) || /\bbypassed\b/i.test(s)) return true;
+
+  const resetClean =
+    /\b(safe\s+to\s+reset|unli\s*reset)\b/i.test(s) &&
+    /\b(icloud|activation\s*lock|lock)\b/i.test(s);
+  if (resetClean) return false;
+
+  const explicitlyClean =
+    /\b(clean|clear)\s+icloud\b/i.test(s) ||
+    /\bicloud\s+(clean|clear|ready|ok)\b/i.test(s) ||
+    /\bno\s+icloud\b/i.test(s) ||
+    /\bicloud\s+ready\s+to\s+(sign\s*in|use)\b/i.test(s);
+
+  if (
+    /\b(nalimtan|nalipatan|nalipat|nalimot|nakalimtan|nakalimot)\b[^\n]{0,24}\b(pass|password)\b[^\n]{0,24}\bicloud\b/i.test(s) ||
+    /\b(pass|password)\b[^\n]{0,16}\bsa\b[^\n]{0,8}\bicloud\b/i.test(s) ||
+    /\bforgot(?:ten)?\b[^\n]{0,24}\b(pass|password)\b[^\n]{0,24}\bicloud\b/i.test(s)
+  ) {
+    return true;
+  }
+
+  if (/\bnot\s+safe\s+to\s+reset\b/i.test(s)) return true;
+  if (/\bactivation\s+lock\b/i.test(s)) return true;
+  if (/\b(icloud)\b[^\n]{0,24}\b(lock|locked)\b/i.test(s)) return true;
+  if (/\b(lock|locked)\b[^\n]{0,24}\b(icloud)\b/i.test(s)) return true;
+  if (/\b(icloud)\b[^\n]{0,24}\b(bypass)\b/i.test(s)) return true;
+  if (/\b(bypass)\b[^\n]{0,24}\b(icloud)\b/i.test(s)) return true;
+  if (/\b(remove|tanggal|delete)\b[^\n]{0,24}\b(icloud)\b/i.test(s)) return true;
+
+  if (explicitlyClean) return false;
+  return false;
 }
 
 export function buildDebugReasons(text) {
