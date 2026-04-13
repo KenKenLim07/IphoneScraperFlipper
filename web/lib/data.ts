@@ -91,7 +91,7 @@ export async function fetchPublicListings(input: PublicListingsQuery) {
 
   let query = supabase
     .from("listings")
-    .select(sort === "deals" ? selectDeals : selectBase, { count: "exact" });
+    .select(sort === "deals" ? selectDeals : selectBase, { count: "estimated" });
 
   if (sort === "deals") {
     query = query

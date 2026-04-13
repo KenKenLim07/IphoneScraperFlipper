@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { unstable_cache } from "next/cache";
 
 import { BatteryHealthPill, PublicListingChecklist } from "@/components/listing-signal-pills";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,15 @@ export const revalidate = 0;
 
 function asString(v: string | string[] | undefined): string {
   return Array.isArray(v) ? v[0] || "" : v || "";
+}
+
+function isNearbyListing(row: PublicListing) {
+  const location = String(row.location_raw || "").toLowerCase();
+  return (
+    location.includes("bacolod") ||
+    location.includes("silay") ||
+    location.includes("guimaras")
+  );
 }
 
 function statusBadge(status: string) {
@@ -110,19 +120,31 @@ export default async function Home({
     query: asString(sp.query),
     status: asString(sp.status),
     sort: asString(sp.sort) || "deals",
-    page: asString(sp.page) || "1"
+    page: asString(sp.page) || "1",
+    nearby: asString(sp.nearby) || "1"
   };
 
   const page = Math.max(1, Number.parseInt(params.page || "1", 10) || 1);
   const sortMode = params.sort === "latest" ? "latest" : "deals";
+  const includeNearby = params.nearby !== "0";
 
-  const data = await fetchPublicListings({
-    query: params.query || null,
-    status: params.status || null,
-    sort: sortMode,
-    page,
-    pageSize: 50
-  });
+  const pageSize = 30;
+  const cacheKey = `public-listings:${params.query || ""}:${params.status || ""}:${sortMode}:${page}:${pageSize}`;
+  const getListings = unstable_cache(
+    () =>
+      fetchPublicListings({
+        query: params.query || null,
+        status: params.status || null,
+        sort: sortMode,
+        page,
+        pageSize
+      }),
+    [cacheKey],
+    { revalidate: 30 }
+  );
+  const data = await getListings();
+
+  const filteredItems = includeNearby ? data.items : data.items.filter((row) => !isNearbyListing(row));
 
   const nowMs = Date.now();
   const totalListings =
@@ -134,52 +156,21 @@ export default async function Home({
       .map((v) => new Date(String(v)).getTime())
       .filter((ms) => Number.isFinite(ms))
       .sort((a, b) => b - a)[0] || null;
-  const hasDeals = data.items.some((row) => showDeal(row));
+  const hasDeals = filteredItems.some((row) => showDeal(row));
   const showDealColumn = sortMode === "deals" || hasDeals;
   const sortLabel = sortMode === "deals" ? "profit" : "latest";
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-balance text-xl font-semibold tracking-tight sm:text-2xl">Public listings</h1>
-        <p className="text-xs text-muted-foreground">
-          Updated at {updatedAt ? formatDateTime(new Date(updatedAt).toISOString()) : "—"}
-        </p>
-        <p className="text-sm text-muted-foreground">
-          Browse recent iPhone listings. Deal score is public; detail page and seller link are gated behind login.
-        </p>
-      </div>
-
-      <form method="get" className="grid gap-3">
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px_120px_auto] sm:items-end">
+      <header className="space-y-2">
+        <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <label className="mb-1 block text-[11px] font-medium text-muted-foreground sm:text-xs" htmlFor="query">
-              Search
-            </label>
-            <Input id="query" name="query" placeholder="e.g. iPhone 13 128" defaultValue={params.query} />
+            <h1 className="text-balance text-xl font-semibold tracking-tight sm:text-2xl">Public listings</h1>
+            <p className="text-xs text-muted-foreground">
+              Updated {updatedAt ? formatRelativeAge(new Date(updatedAt).toISOString(), nowMs) : "—"}
+            </p>
           </div>
-          <div>
-            <label className="mb-1 block text-[11px] font-medium text-muted-foreground sm:text-xs" htmlFor="status">
-              Status
-            </label>
-            <select
-              id="status"
-              name="status"
-              defaultValue={params.status}
-              className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:h-10"
-            >
-              <option value="">Any</option>
-              <option value="active">active</option>
-              <option value="sold">sold</option>
-              <option value="unavailable">unavailable</option>
-            </select>
-          </div>
-          <div>
-            <Button type="submit" className="w-full">
-              Search
-            </Button>
-          </div>
-          <div className="hidden items-end justify-end sm:flex">
+          <div className="hidden items-center gap-2 sm:flex">
             <div className="inline-flex rounded-md border border-border bg-background/60 p-1">
               <Button
                 asChild
@@ -202,6 +193,54 @@ export default async function Home({
                 </Link>
               </Button>
             </div>
+          </div>
+        </div>
+      </header>
+
+      <form method="get" className="grid gap-3 rounded-xl border border-border/70 bg-card/40 p-3 sm:p-4">
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px_160px_120px] sm:items-end">
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-muted-foreground sm:text-xs" htmlFor="query">
+              Search
+            </label>
+            <Input id="query" name="query" placeholder="e.g. iPhone 13 128" defaultValue={params.query} />
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:contents">
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-muted-foreground sm:text-xs" htmlFor="status">
+                Status
+              </label>
+              <select
+                id="status"
+                name="status"
+                defaultValue={params.status}
+                className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:h-10"
+              >
+                <option value="">Any</option>
+                <option value="active">active</option>
+                <option value="sold">sold</option>
+                <option value="unavailable">unavailable</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-muted-foreground sm:text-xs" htmlFor="nearby">
+                Area
+              </label>
+              <select
+                id="nearby"
+                name="nearby"
+                defaultValue={params.nearby}
+                className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:h-10"
+              >
+              <option value="1">Include nearby (Bacolod, Silay, Guimaras)</option>
+              <option value="0">Iloilo only</option>
+            </select>
+          </div>
+          </div>
+          <div>
+            <Button type="submit" className="w-full">
+              Search
+            </Button>
           </div>
         </div>
 
@@ -235,7 +274,7 @@ export default async function Home({
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <span>
-            Showing {data.items.length} items • page {data.page} • sorted by {sortLabel}
+            Showing {filteredItems.length} items • page {data.page} • sorted by {sortLabel}
           </span>
           <Link className="underline underline-offset-4 hover:text-foreground" href="/listings">
             Clear filters
@@ -245,18 +284,18 @@ export default async function Home({
 
       <Card>
         <CardHeader>
-          <CardTitle>Total listings</CardTitle>
+          <CardTitle>Listings</CardTitle>
           <CardDescription>
-            Total listings: {totalListings != null ? totalListings.toLocaleString() : "—"} • Click any row to view the
+            Total listings (est.): {totalListings != null ? totalListings.toLocaleString() : "—"} • Click any row to view the
             detail page (login required).
           </CardDescription>
         </CardHeader>
         <CardContent>
 
-          {data.items.length ? (
+          {filteredItems.length ? (
             <>
               <div className="space-y-3 sm:hidden">
-                {data.items.map((row: PublicListing) => (
+                {filteredItems.map((row: PublicListing) => (
                   (() => {
                     const dealVisible = showDeal(row);
                     const score = dealVisible ? dealScoreBadge(row.deal_score) : null;
@@ -356,7 +395,7 @@ export default async function Home({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.items.map((row: PublicListing) => (
+                    {filteredItems.map((row: PublicListing) => (
                       (() => {
                         const dealVisible = showDeal(row);
                         const score = dealVisible ? dealScoreBadge(row.deal_score) : null;

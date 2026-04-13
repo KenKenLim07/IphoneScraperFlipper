@@ -32,7 +32,26 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <SiteHeader authed={authed} />
           <main className="mx-auto max-w-6xl px-3 py-4 sm:px-4 sm:py-6 lg:px-6">{children}</main>
           <footer className="mx-auto max-w-6xl px-3 pb-10 pt-6 text-xs text-muted-foreground sm:px-4 lg:px-6">
-            Data updates automatically. Details and seller link require login.
+            <div className="border-t border-border/70 pt-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <div className="text-[11px] uppercase tracking-wide text-muted-foreground">IAASE</div>
+                  <div className="text-xs text-muted-foreground">
+                    Public listings intelligence for Iloilo + nearby. Details require login.
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                  <span>About</span>
+                  <span>•</span>
+                  <span>How scoring works</span>
+                  <span>•</span>
+                  <span>Contact</span>
+                </div>
+                <div className="text-[11px] text-muted-foreground sm:text-right">
+                  Auto-updating listings
+                </div>
+              </div>
+            </div>
           </footer>
         </ThemeProvider>
       </body>
