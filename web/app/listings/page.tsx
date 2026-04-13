@@ -66,6 +66,7 @@ function buildRedFlags(value: unknown): string[] {
   if (flags.icloud_lock) warnings.push("iCloud / reset risk");
   if (flags.wanted_post) warnings.push("Buyer/wanted post");
   if (flags.price_too_low) warnings.push("Tikalon price check");
+  if (flags.audio_issue) warnings.push("Audio issue");
   if (flags.face_id_not_working) warnings.push("Face ID not working");
   if (flags.screen_issue) warnings.push("Screen issue detected");
   if (flags.camera_issue) warnings.push("Camera issue detected");

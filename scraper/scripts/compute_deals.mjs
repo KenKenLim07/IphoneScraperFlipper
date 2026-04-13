@@ -241,9 +241,10 @@ function riskCostFromText(text) {
   const display = issues.lcd_replaced ? 2500 : issues.screen_issue ? 2500 : 0;
   const backGlass = issues.back_glass_cracked ? 1500 : issues.back_glass_replaced ? 800 : 0;
   const button = issues.button_issue ? 1000 : 0;
+  const audio = issues.audio_issue ? 1500 : 0;
   const battery = cost(/\bbattery\b.*\b(issue|problem|broken|service)\b/i, 1500);
 
-  return faceId + trutone + camera + display + backGlass + button + battery;
+  return faceId + trutone + camera + display + backGlass + button + audio + battery;
 }
 
 function formatPhpCompact(v) {
@@ -360,6 +361,7 @@ async function main() {
       network_locked: issues.network_locked || null,
       wifi_only: issues.wifi_only || null,
       button_issue: issues.button_issue || null,
+      audio_issue: issues.audio_issue || null,
       no_description: noDescription || null,
       price_too_low: priceTikalon || null
     };
@@ -498,7 +500,8 @@ async function main() {
       c.risk_flags?.back_glass_replaced ||
       c.risk_flags?.back_glass_cracked ||
       c.risk_flags?.battery_replaced ||
-      c.risk_flags?.button_issue
+      c.risk_flags?.button_issue ||
+      c.risk_flags?.audio_issue
     );
     const lowConfidenceComps = sampleSize < 10;
     const noDesc = !!c.risk_flags?.no_description;
@@ -557,6 +560,7 @@ async function main() {
         if (c.risk_flags?.back_glass_cracked) addReason("⚠️ Back glass cracked (score capped to B)");
         if (c.risk_flags?.battery_replaced) addReason("⚠️ Battery replaced (score capped to B)");
         if (c.risk_flags?.button_issue) addReason("⚠️ Button issue (volume/power) (score capped to B)");
+        if (c.risk_flags?.audio_issue) addReason("⚠️ Audio issue (mic/speaker) (score capped to B)");
       }
 
       if (lowConfidenceComps) addReason(`⚠️ Low confidence comps (n=${sampleSize}, score capped to C)`);
@@ -584,6 +588,7 @@ async function main() {
     if (c.risk_flags?.back_glass_cracked) addReason("⚠️ Back glass cracked");
     if (c.risk_flags?.battery_replaced) addReason("⚠️ Battery replaced");
     if (c.risk_flags?.button_issue) addReason("⚠️ Button issue (volume/power)");
+    if (c.risk_flags?.audio_issue) addReason("⚠️ Audio issue (mic/speaker)");
     if (c.risk_flags?.price_too_low) addReason("⚠️ Tikalon price check");
 
     addReason(`Confidence: ${confidence} (n=${sampleSize} comps)`);

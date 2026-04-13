@@ -57,3 +57,10 @@ Add tests for:
 - `Kamo nalang pa bypass` → bypass / icloud risk
 - `safe to reset Truetone face id working` → face id + trutone working; no false negative
 - `wala signal` → network issue
+
+## Recent Rule Updates (2026-04-13)
+- **Genuine/service center screen replacement:** flag `lcd_replaced` but suppress `screen_issue`.
+- **Battery replacement phrasing:** detect `nachange` / `changed` / `change`.
+- **TrueTone working override:** explicit “True Tone working” clears missing flag.
+- **Issue line + LCD replacement:** do not mark `screen_issue` unless explicit screen defects exist.
+- **Camera blur 0.5x:** treat `0.5x` / `ultrawide` blur as `camera_issue`.

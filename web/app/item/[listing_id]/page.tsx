@@ -42,7 +42,8 @@ function buildWarnings(listing: any): string[] {
 
   if (flags.icloud_lock) warnings.push("iCloud / activation / reset risk");
   if (flags.wanted_post) warnings.push("Looks like buyer/wanted post (LF/WTB/BUYING)");
-  if (flags.price_too_low) warnings.push("Tikalon price yarn?");
+  if (flags.price_too_low) warnings.push("Tikalon price check");
+  if (flags.audio_issue) warnings.push("Audio issue (mic/speaker)");
   if (flags.face_id_not_working) warnings.push("Face ID not working");
   if (flags.screen_issue) warnings.push("Screen issue detected");
     if (flags.camera_issue) warnings.push("Camera issue detected");

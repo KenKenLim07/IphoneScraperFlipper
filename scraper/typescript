@@ -1,0 +1,40 @@
+Script started on 2026-04-13 03:14:33+08:00 [TERM="xterm-256color" TTY="/dev/pts/2" COLUMNS="107" LINES="23"]
+[?2004h[0;31m┌─[[0;39mkenkenlim[01;33m@[01;96mparrot[0;31m]─[[0;32m~/Desktop/Projects/IphoneflipperScrapper/scraper[0;31m]
+[0;31m└──╼ [0m[01;33m$[0mls[Kcd [K[K[Kcd ..
+[?2004l[?2004h[0;31m┌─[[0;39mkenkenlim[01;33m@[01;96mparrot[0;31m]─[[0;32m~/Desktop/Projects/IphoneflipperScrapper[0;31m]
+[0;31m└──╼ [0m[01;33m$[0mls
+[?2004lAUTOMATION_CHEATSHEET.md  [0m[01;34mdocs[0m                  [01;34minfra[0m    [01;34mnode_modules[0m  [01;34mscraper[0m          vercel.json
+DESIGN.md                 facebookgraphql.json  LICENSE  package.json  SKILLS_GUIDE.md  [01;34mweb[0m
+[01;34mdesign-system[0m             GRAPHQL_CLEANUP.md    [01;34mlogs[0m     README.md     TODO_LIST.md
+[?2004h[0;31m┌─[[0;39mkenkenlim[01;33m@[01;96mparrot[0;31m]─[[0;32m~/Desktop/Projects/IphoneflipperScrapper[0;31m]
+[0;31m└──╼ [0m[01;33m$[0mcd[K[Kcd scraper/
+[?2004l[?2004h[0;31m┌─[[0;39mkenkenlim[01;33m@[01;96mparrot[0;31m]─[[0;32m~/Desktop/Projects/IphoneflipperScrapper/scraper[0;31m]
+[0;31m└──╼ [0m[01;33m$[0mls
+[?2004lCOMMANDS.md  [0m[01;34mlogs[0m          package-lock.json  [01;34mscraper[0m  [01;34msql[0m
+[01;34mdata[0m         package.json  [01;32mrequirements.txt[0m   [01;34mscripts[0m  typescript
+[?2004h[0;31m┌─[[0;39mkenkenlim[01;33m@[01;96mparrot[0;31m]─[[0;32m~/Desktop/Projects/IphoneflipperScrapper/scraper[0;31m]
+[0;31m└──╼ [0m[01;33m$[0mcs[Kd sc[Kri[Kcrip[K[K[K[Kr[Kc[K[Kcripts/
+[?2004l[?2004h[0;31m┌─[[0;39mkenkenlim[01;33m@[01;96mparrot[0;31m]─[[0;32m~/Desktop/Projects/IphoneflipperScrapper/scraper/scripts[0;31m]
+[0;31m└──╼ [0m[01;33m$[0mnode compute_deals.mjs 
+[?2004l[INFO] deals_start window_days=30 max_listings=5000
+[INFO] deals_filter total=373 skipped_no_id=0 skipped_no_model=5 candidates=368 priced=368 no_price=0 has_time=368 no_time=0 old_post=2 recent_priced=366
+[INFO] deals_filter_no_model_samples count=5 samples=[{"listing_id":"2135017870656475","title":"Iphone 6","desc_preview":"No issue 100 health batt May ayu pamn sa sure buyer | See translation"},{"listing_id":"1319072646988280","title":"Iphone 6 plus","desc_preview":"90% bh Good for taking pictures and videos pm lng"},{"listing_id":"4412155292406870","title":"Iphone 6s","desc_preview":"iphone 6splus openline 64gb 100bh no issue 3500"},{"listing_id":"1820790705544235","title":"iphone 6s","desc_preview":"Device name | swap sa Android or sale"},{"listing_id":"2233885977142213","title":"Iphone6","desc_preview":"Need lng gd sang kwarta nami pa gamiton bag o pgd ang mkakuha xbng | See translation"}]
+[INFO] deals_compute candidates=368 features=368 metrics=368 recent_priced=366
+[INFO] deals_sample listing_id=736692772766455 score=C below_market_pct=0.1333 profit=-5500 comps_n=8
+[SUMMARY] deals_done status=success
+[?2004h[0;31m┌─[[0;39mkenkenlim[01;33m@[01;96mparrot[0;31m]─[[0;32m~/Desktop/Projects/IphoneflipperScrapper/scraper/scripts[0;31m]
+[0;31m└──╼ [0m[01;33m$[0mnode compute_deals.mjs [C[C[C[C[C[C[12Pcd scripts/[C[C[C[C[C[Cls[Kcd scripts/[C[C[C[C[C[Cnode compute_deals.mjs [C[C[C[C[C[C[Knode compute_deals.mjs [C[C[C[C[C[C[12Pcd scripts/[C[C[C[C[C[Cls[Kcd scraper/[C[C[C[C[C[Cls[Kcd ..[3Plscd web/npx plugins add vercel/vercel-plugin[C[C[C[C[C[C[C[Cm run build[K[C[C[C[C[C[C[C[Cx plugins add vercel/vercel-plugin[C[C[C[C[C[Ccd web/[Kls[Kcd ..[3Plscd scraper/[C[C[C[C[C[Cls[Kcd scripts/[C[C[C[C[C[Cnode compute_deals.mjs 
+[?2004l[INFO] deals_start window_days=30 max_listings=5000
+[INFO] deals_filter total=373 skipped_no_id=0 skipped_no_model=5 candidates=368 priced=368 no_price=0 has_time=368 no_time=0 old_post=2 recent_priced=366
+[INFO] deals_filter_no_model_samples count=5 samples=[{"listing_id":"2135017870656475","title":"Iphone 6","desc_preview":"No issue 100 health batt May ayu pamn sa sure buyer | See translation"},{"listing_id":"1319072646988280","title":"Iphone 6 plus","desc_preview":"90% bh Good for taking pictures and videos pm lng"},{"listing_id":"4412155292406870","title":"Iphone 6s","desc_preview":"iphone 6splus openline 64gb 100bh no issue 3500"},{"listing_id":"1820790705544235","title":"iphone 6s","desc_preview":"Device name | swap sa Android or sale"},{"listing_id":"2233885977142213","title":"Iphone6","desc_preview":"Need lng gd sang kwarta nami pa gamiton bag o pgd ang mkakuha xbng | See translation"}]
+[INFO] deals_compute candidates=368 features=368 metrics=368 recent_priced=366
+[INFO] deals_sample listing_id=736692772766455 score=C below_market_pct=0.1333 profit=-5500 comps_n=8
+[SUMMARY] deals_done status=success
+[?2004h[0;31m┌─[[0;39mkenkenlim[01;33m@[01;96mparrot[0;31m]─[[0;32m~/Desktop/Projects/IphoneflipperScrapper/scraper/scripts[0;31m]
+[0;31m└──╼ [0m[01;33m$[0m[7mnode --test scraper/scripts/deal_text.test.mjs[27m
+[A[C[C[C[C[C[Cnode --test scraper/scripts/deal_text.test.mjs
+[A
+[?2004lCould not find 'scraper/scripts/deal_text.test.mjs'
+[?2004h[0;31m┌─[[0;37m✗[0;31m]─[[0;39mkenkenlim[01;33m@[01;96mparrot[0;31m]─[[0;32m~/Desktop/Projects/IphoneflipperScrapper/scraper/scripts[0;31m]
+[0;31m└──╼ [0m[01;33m$[0m[K[0;31m└──╼ [0m[01;33m$[0m[K[0;31m└──╼ [0m[01;33m$[0m[K[0;31m└──╼ [0m[01;33m$[0m[K[0;31m└──╼ [0m[01;33m$[0m[K[0;31m└──╼ [0m[01;33m$[0m[K[0;31m└──╼ [0m[01;33m$[0m[K[0;31m└──╼ [0m[01;33m$[0m[K[0;31m└──╼ [0m[01;33m$[0m[K[0;31m└──╼ [0m[01;33m$[0m[K[0;31m└──╼ [0m[01;33m$[0m
+Script done on 2026-04-13 05:13:17+08:00 [COMMAND_EXIT_CODE="0"]

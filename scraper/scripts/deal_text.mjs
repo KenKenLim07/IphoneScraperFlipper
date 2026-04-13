@@ -49,13 +49,16 @@ const FEATURE_RULES = {
     singles: ["screen", "display"],
     collapsed: ["screen", "display"],
     positives: [],
-    negatives: ["issue", "problem", "broken", "line", "lines", "green", "pink", "flicker", "burn", "dead", "ghost"],
+    negatives: [
+      "issue", "problem", "broken", "line", "lines", "green", "pink", "flicker", "burn", "dead", "ghost",
+      "crack", "cracked", "dot", "dots", "pixel", "deadpixel"
+    ],
     allowFallbackWorking: false
   },
   lcd: {
-    sequences: [["lcd"]],
-    singles: ["lcd", "oled", "display"],
-    collapsed: ["lcd", "oled", "display"],
+    sequences: [["lcd"], ["apple", "service", "center"]],
+    singles: ["lcd", "oled", "display", "servicecenter"],
+    collapsed: ["lcd", "oled", "display", "appleservicecenter", "servicecenter"],
     positives: ["orig", "original"],
     negatives: ["replace", "replaced", "replacement", "palit", "pinalitan", "ilis", "isli", "pullout", "incell"],
     allowFallbackWorking: false
@@ -89,7 +92,11 @@ const FEATURE_RULES = {
     singles: ["battery", "batt"],
     collapsed: ["battery", "batt"],
     positives: [],
-    negatives: ["replace", "replaced", "replacement", "palit", "pinalitan", "ilis", "isli"],
+    negatives: [
+      "replace", "replaced", "replacement",
+      "change", "changed", "nachange", "nachange",
+      "palit", "pinalitan", "ilis", "isli"
+    ],
     allowFallbackWorking: false
   },
   button: {
@@ -117,6 +124,15 @@ const FEATURE_RULES = {
     ],
     positives: ["working", "ok", "okay", "functional", "gagana", "gana", "naga"],
     negatives: ["issue", "problem", "broken", "defect", "dead", "notwork", "notworking", "guba"],
+    allowFallbackWorking: false,
+    mentionImpliesIssue: true
+  },
+  audio: {
+    sequences: [["microphone"], ["mic"], ["speaker"], ["earpiece"], ["loudspeaker"]],
+    singles: ["microphone", "mic", "speaker", "earpiece", "loudspeaker"],
+    collapsed: ["microphone", "mic", "speaker", "earpiece", "loudspeaker"],
+    positives: ["working", "ok", "okay", "functional", "gagana", "gana", "naga"],
+    negatives: ["issue", "problem", "broken", "defect", "dead", "notwork", "notworking", "guba", "no", "wala", "wla", "di", "dili", "dli"],
     allowFallbackWorking: false,
     mentionImpliesIssue: true
   }
@@ -182,7 +198,12 @@ function scanIssueLines(lower) {
   for (const line of lines) {
     if (!ISSUE_LINE_RE.test(line)) continue;
     if (lineHasAny(line, CAMERA_ALIASES)) hits.camera = true;
-    if (lineHasAny(line, SCREEN_ALIASES)) hits.screen = true;
+    if (lineHasAny(line, SCREEN_ALIASES)) {
+      const replacementOnly =
+        /\b(replace|replaced|replacement)\b/i.test(line) &&
+        /\b(apple\s*service\s*center|service\s*center|genuine|original)\b/i.test(line);
+      if (!replacementOnly) hits.screen = true;
+    }
     if (lineHasAny(line, NETWORK_ALIASES)) hits.network = true;
   }
   return hits;
@@ -324,12 +345,18 @@ export function detectIssues(text) {
   const wifi = evaluateFeature(views, FEATURE_RULES.wifi_only);
   const battery = evaluateFeature(views, FEATURE_RULES.battery);
   const button = evaluateFeature(views, FEATURE_RULES.button);
+  const audio = evaluateFeature(views, FEATURE_RULES.audio);
   const issueHits = scanIssueLines(views.lower);
 
   const allWorking = hasAllWorkingPhrase(views.lower);
 
   const faceWorkingPhrase =
     /\bface\s*id\b[^\n]{0,24}\b(working|wrking|ok|okay|functional|gagana|naga\s*gana|gana)\b/i.test(views.lower);
+  const faceWorkingEmoji =
+    /\bface\s*id\b[^\n]{0,6}[✅✔️]/i.test(views.lower) || /[✅✔️][^\n]{0,6}\bface\s*id\b/i.test(views.lower);
+  const faceBadEmoji =
+    /\bface\s*id\b[^\n]{0,6}(?:❌|✗|✘|x)\b/i.test(views.lower) ||
+    /(?:❌|✗|✘|x)[^\n]{0,6}\bface\s*id\b/i.test(views.lower);
   const faceNegPhrase =
     /\b(no|not|wala|wla|di|dili|dli|indi|way|waay)\s+face\s*id\b/i.test(views.lower) ||
     /\bface\s*id\b[^\n]{0,24}\b(not\s*work(?:ing)?|issue|problem|broken|defect|dead|guba)\b/i.test(views.lower) ||
@@ -345,26 +372,69 @@ export function detectIssues(text) {
     });
   const truetoneNoPhrase =
     /\b(no|not|wala|wla|di|dili|dli|indi|way|waay)\s+(?:true\s*tone|truetone|trutone|trueton)\b/i.test(views.lower);
+  const truetoneWorkingPhrase =
+    /\b(true\s*tone|truetone|trutone|trueton)\b[^\n]{0,24}\b(working|wrking|ok|okay|functional|gagana|naga\s*gana|gana)\b/i.test(views.lower);
+  const truetoneWorkingEmoji =
+    /\b(true\s*tone|truetone|trutone|trueton)\b[^\n]{0,6}[✅✔️]/i.test(views.lower) ||
+    /[✅✔️][^\n]{0,6}\b(true\s*tone|truetone|trutone|trueton)\b/i.test(views.lower);
+  const truetoneBadEmoji =
+    /\b(true\s*tone|truetone|trutone|trueton)\b[^\n]{0,6}(?:❌|✗|✘|x)\b/i.test(views.lower) ||
+    /(?:❌|✗|✘|x)[^\n]{0,6}\b(true\s*tone|truetone|trutone|trueton)\b/i.test(views.lower);
 
-  const truetoneMissing = !!truetone.negative || truetoneNoPhrase;
-  const faceNotWorking = !!face.negative && faceNegPhrase;
+  const truetoneMissing =
+    (truetone.negative || truetoneNoPhrase || truetoneBadEmoji) && !truetoneWorkingPhrase && !truetoneWorkingEmoji;
+  const faceNotWorking = !!face.negative && (faceNegPhrase || faceBadEmoji);
   const faceWorking =
-    faceWorkingPhrase && !faceNegPhrase
+    (faceWorkingPhrase || faceWorkingEmoji) && !faceNegPhrase
       ? true
       : face.positive
         ? true
         : !faceNotWorking && allWorking
           ? true
           : null;
-  const truetoneWorking = truetone.positive ? true : !truetoneMissing && allWorking ? true : null;
+  const truetoneWorking =
+    truetoneWorkingPhrase || truetoneWorkingEmoji
+      ? true
+      : truetone.positive
+        ? true
+        : !truetoneMissing && allWorking
+          ? true
+          : null;
 
   const touchIssue =
     /\b(no|not|wala|wla|di|dili|dli|indi)\s+touch\b/i.test(views.lower) ||
     /\btouch\b[^\n]{0,12}\b(not\s*work(?:ing)?|issue|problem|broken|dead|defect)\b/i.test(views.lower);
 
-  const cameraNegative = camera.negative || issueHits.camera;
-  const screenNegative = screen.negative || issueHits.screen || touchIssue;
+  const wideBlur =
+    /\b(0\.5x?|0\.5|ultra\s*wide|ultrawide|wide\s*angle)\b/i.test(views.lower) &&
+    /\b(blur|blurd|blurry|blurred|ga\s*blurd|ga\s*blur)\b/i.test(views.lower);
+
+  const cameraNoBlur =
+    /\bno\s+(blur|blurd|blurry|blurred)\b/i.test(views.lower) &&
+    /\b(cam|camera|back\s*cam|rear\s*cam|front\s*cam)\b/i.test(views.lower);
+  const cameraHardNeg =
+    /\b(issue|problem|broken|defect|dead|nocamera|not\s*work(?:ing)?|notwork)\b/i.test(views.lower);
+
+  let cameraNegative = camera.negative || issueHits.camera || wideBlur;
+  if (cameraNoBlur && !cameraHardNeg) {
+    cameraNegative = false;
+  }
+
+  const screenReplacementOnly =
+    /\b(lcd|screen|display)\b[^\n]{0,32}\b(replace|replaced|replacement)\b/i.test(views.lower) &&
+    /\b(apple\s*service\s*center|service\s*center|genuine|original)\b/i.test(views.lower);
+
+  const screenNegative = (screen.negative || issueHits.screen || touchIssue) && !screenReplacementOnly;
   const networkNegative = network.negative || issueHits.network;
+
+  const batteryReplacementMention =
+    /\b(battery|batt)\b[^\n]{0,40}\b(replace|replaced|replacement|change|changed|nachange)\b/i.test(views.lower);
+  const lcdReplacementMention =
+    /\b(replace|replaced|replacement|change|changed|nachange)\b[^\n]{0,12}\b(lcd|oled|screen|display)\b/i.test(views.lower);
+  const batteryReplacementTight =
+    /\b(battery|batt)\b[^\n]{0,6}\b(replace|replaced|replacement|change|changed|nachange)\b/i.test(views.lower);
+  const batteryNegative =
+    battery.negative && !(batteryReplacementMention && lcdReplacementMention && !batteryReplacementTight);
 
   return {
     face_id_working: faceWorking,
@@ -374,12 +444,13 @@ export function detectIssues(text) {
     lcd_replaced: !!lcd.negative,
     back_glass_replaced: !!back.negative && views.lower.includes("replace"),
     back_glass_cracked: !!back.negative && (views.lower.includes("crack") || views.lower.includes("buka") || views.lower.includes("basag")),
-    battery_replaced: !!battery.negative,
+    battery_replaced: !!batteryNegative,
     camera_issue: cameraNegative,
     screen_issue: screenNegative,
     network_locked: networkNegative,
     wifi_only: !!wifi.negative && views.lower.includes("wifi"),
-    button_issue: !!button.negative
+    button_issue: !!button.negative,
+    audio_issue: !!audio.negative
   };
 }
 

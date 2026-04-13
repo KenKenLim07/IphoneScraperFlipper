@@ -130,3 +130,101 @@ test("button mentions marked working do not flag", () => {
     { button_issue: false }
   );
 });
+
+test("genuine screen replacement does not trigger screen issue", () => {
+  const issues = detectIssues(
+    "Honest Disclosure: The Screen (Genuine) was replaced by APPLE SERVICE CENTER with Genuine Apple Part due to single dead pixel issue"
+  );
+  assert.deepEqual(
+    pick(issues, ["lcd_replaced", "screen_issue"]),
+    { lcd_replaced: true, screen_issue: false }
+  );
+});
+
+test("nachange battery flags replacement", () => {
+  const issues = detectIssues("Nachange lang battery");
+  assert.deepEqual(
+    pick(issues, ["battery_replaced"]),
+    { battery_replaced: true }
+  );
+});
+
+test("truetone working overrides missing with battery replaced phrasing", () => {
+  const issues = detectIssues(
+    "Battery Health (Replaced) ✅ NTC Approved ✅ Openline Sim ✅ Safe To Reset ✅ Face ID & True Tone Working ✅"
+  );
+  assert.deepEqual(
+    pick(issues, ["trutone_working", "trutone_missing", "battery_replaced"]),
+    { trutone_working: true, trutone_missing: false, battery_replaced: true }
+  );
+});
+
+test("issue line with face id and lcd replacement does not add screen issue", () => {
+  const issues = detectIssues("Issue: face id and lcd replacement 78% bh original wala kaagi paislan");
+  assert.deepEqual(
+    pick(issues, ["face_id_not_working", "lcd_replaced", "screen_issue"]),
+    { face_id_not_working: true, lcd_replaced: true, screen_issue: false }
+  );
+});
+
+test("ultrawide blur triggers camera issue", () => {
+  const issues = detectIssues("ga blurd gamay 0.5");
+  assert.deepEqual(
+    pick(issues, ["camera_issue"]),
+    { camera_issue: true }
+  );
+});
+
+test("no blur cam should not flag camera issue", () => {
+  const issues = detectIssues("No blur sa cam 10/10 (both)");
+  assert.deepEqual(
+    pick(issues, ["camera_issue"]),
+    { camera_issue: false }
+  );
+});
+
+test("battery mention with lcd replacement does not flag battery replaced", () => {
+  const issues = detectIssues("80 percent battery health newly replaced lcd oled");
+  assert.deepEqual(
+    pick(issues, ["battery_replaced", "lcd_replaced"]),
+    { battery_replaced: false, lcd_replaced: true }
+  );
+});
+
+test("audio issues are detected from mic/speaker mentions", () => {
+  const issues = detectIssues("no microphone");
+  assert.deepEqual(
+    pick(issues, ["audio_issue"]),
+    { audio_issue: true }
+  );
+
+  const issues2 = detectIssues("speaker issue");
+  assert.deepEqual(
+    pick(issues2, ["audio_issue"]),
+    { audio_issue: true }
+  );
+});
+
+test("audio mentions marked working do not flag", () => {
+  const issues = detectIssues("microphone working");
+  assert.deepEqual(
+    pick(issues, ["audio_issue"]),
+    { audio_issue: false }
+  );
+});
+
+test("face id checkmark counts as working", () => {
+  const issues = detectIssues("FACE ID ✅");
+  assert.deepEqual(
+    pick(issues, ["face_id_working", "face_id_not_working"]),
+    { face_id_working: true, face_id_not_working: false }
+  );
+});
+
+test("face id x counts as not working", () => {
+  const issues = detectIssues("FACE ID x");
+  assert.deepEqual(
+    pick(issues, ["face_id_working", "face_id_not_working"]),
+    { face_id_working: null, face_id_not_working: true }
+  );
+});

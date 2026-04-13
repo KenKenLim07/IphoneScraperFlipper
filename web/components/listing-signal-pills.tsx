@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   FileWarning,
   Lock,
+  Mic,
   Minus,
   Monitor,
   ScanFace,
@@ -272,6 +273,12 @@ export function ListingSignalPills({
       label: "Cam",
       title: "Camera issue",
       icon: CameraOff,
+      tone: "warn"
+    },
+    flags.audio_issue && {
+      label: "Audio",
+      title: "Microphone / speaker issue",
+      icon: Mic,
       tone: "warn"
     },
     flags.button_issue && {
