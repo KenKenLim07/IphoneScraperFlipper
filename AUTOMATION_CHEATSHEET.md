@@ -53,6 +53,7 @@ systemctl --user list-timers --all | grep iaase || true
 ```bash
 journalctl --user -u iaase-discover.service -n 200 --no-pager
 journalctl --user -u iaase-monitor.service -n 200 --no-pager
+journalctl --user -u iaase-discover.service -f
 ```
 
 ### Disable automation
@@ -105,3 +106,5 @@ MONITOR_LIMIT=50
 - Logs: `scraper/logs/`
 - systemd units: `~/.config/systemd/user/`
 - Service templates: `infra/systemd/`
+
+systemctl --user status iaase-monitor.timer

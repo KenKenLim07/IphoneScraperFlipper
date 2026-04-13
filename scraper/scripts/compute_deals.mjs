@@ -151,6 +151,12 @@ function parseBatteryHealth(text) {
       const raw = m[1];
       const n = Number.parseInt(String(raw), 10);
       if (!Number.isFinite(n)) continue;
+      const matchStart = typeof m.index === "number" ? m.index : 0;
+      const matchText = String(m[0] || "");
+      const numOffset = matchText.toLowerCase().indexOf(String(raw).toLowerCase());
+      const numStart = Math.max(0, matchStart + (numOffset >= 0 ? numOffset : 0));
+      const tail = s.slice(numStart, Math.min(s.length, numStart + 16)).toLowerCase();
+      if (new RegExp(`\\b${raw}\\s*(cc|cycle\\s*count)\\b`, "i").test(tail)) continue;
       // Only treat 40..100 as valid battery health.
       if (n < 40 || n > 100) continue;
       candidates.push(n);

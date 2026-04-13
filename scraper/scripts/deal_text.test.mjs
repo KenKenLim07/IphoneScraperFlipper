@@ -191,6 +191,14 @@ test("battery mention with lcd replacement does not flag battery replaced", () =
   );
 });
 
+test("no battery change does not flag battery replaced", () => {
+  const issues = detectIssues("Battery health 78% No repair/no battery change No scratches, perfect condition");
+  assert.deepEqual(
+    pick(issues, ["battery_replaced"]),
+    { battery_replaced: false }
+  );
+});
+
 test("audio issues are detected from mic/speaker mentions", () => {
   const issues = detectIssues("no microphone");
   assert.deepEqual(
@@ -226,5 +234,59 @@ test("face id x counts as not working", () => {
   assert.deepEqual(
     pick(issues, ["face_id_working", "face_id_not_working"]),
     { face_id_working: null, face_id_not_working: true }
+  );
+});
+
+test("crack lcd should flag screen issue", () => {
+  const issues = detectIssues("Issue crack lcd sa upper part, wala ga affect sa performance");
+  assert.deepEqual(
+    pick(issues, ["screen_issue"]),
+    { screen_issue: true }
+  );
+});
+
+test("cracklines upper part should flag screen issue", () => {
+  const issues = detectIssues("Cracklines upper Part");
+  assert.deepEqual(
+    pick(issues, ["screen_issue"]),
+    { screen_issue: true }
+  );
+});
+
+test("power brick mention should not flag button issue", () => {
+  const issues = detectIssues("no power brick included only original apple braided cable");
+  assert.deepEqual(
+    pick(issues, ["button_issue"]),
+    { button_issue: false }
+  );
+});
+
+test("small crack at the back should flag back glass crack", () => {
+  const issues = detectIssues("small crack at the back");
+  assert.deepEqual(
+    pick(issues, ["back_glass_cracked"]),
+    { back_glass_cracked: true }
+  );
+});
+
+test("back crack suppressed when back glass replaced", () => {
+  const issues = detectIssues("small crack at the back, back glass replaced");
+  assert.deepEqual(
+    pick(issues, ["back_glass_cracked", "back_glass_replaced"]),
+    { back_glass_cracked: false, back_glass_replaced: true }
+  );
+});
+
+test("back glass replacement slang suppresses crack", () => {
+  const issues = detectIssues("crack at the back bag o ilis backglass");
+  assert.deepEqual(
+    pick(issues, ["back_glass_cracked", "back_glass_replaced"]),
+    { back_glass_cracked: false, back_glass_replaced: true }
+  );
+
+  const issues2 = detectIssues("backglass na ilis");
+  assert.deepEqual(
+    pick(issues2, ["back_glass_replaced"]),
+    { back_glass_replaced: true }
   );
 });

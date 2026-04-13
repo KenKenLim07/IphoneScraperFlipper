@@ -2,9 +2,7 @@ name: Deals Compute
 
 on:
   workflow_dispatch:
-  schedule:
-    # Every hour
-    - cron: "0 * * * *"
+  # schedule paused (systemd handles automation)
 
 concurrency:
   group: deals-compute

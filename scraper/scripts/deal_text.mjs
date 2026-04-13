@@ -51,7 +51,7 @@ const FEATURE_RULES = {
     positives: [],
     negatives: [
       "issue", "problem", "broken", "line", "lines", "green", "pink", "flicker", "burn", "dead", "ghost",
-      "crack", "cracked", "dot", "dots", "pixel", "deadpixel"
+      "crack", "cracked", "crackline", "cracklines", "dot", "dots", "pixel", "deadpixel"
     ],
     allowFallbackWorking: false
   },
@@ -109,7 +109,7 @@ const FEATURE_RULES = {
       ["lock", "button"],
       ["side", "button"]
     ],
-    singles: ["volume", "power", "lock", "side", "key"],
+    singles: ["volume"],
     collapsed: [
       "volume",
       "volumeup",
@@ -355,8 +355,8 @@ export function detectIssues(text) {
   const faceWorkingEmoji =
     /\bface\s*id\b[^\n]{0,6}[✅✔️]/i.test(views.lower) || /[✅✔️][^\n]{0,6}\bface\s*id\b/i.test(views.lower);
   const faceBadEmoji =
-    /\bface\s*id\b[^\n]{0,6}(?:❌|✗|✘|x)\b/i.test(views.lower) ||
-    /(?:❌|✗|✘|x)[^\n]{0,6}\bface\s*id\b/i.test(views.lower);
+    /\bface\s*id\b[^\n]{0,6}(?:❌|✗|✘|\bx\b)/i.test(views.lower) ||
+    /(?:❌|✗|✘|\bx\b)[^\n]{0,6}\bface\s*id\b/i.test(views.lower);
   const faceNegPhrase =
     /\b(no|not|wala|wla|di|dili|dli|indi|way|waay)\s+face\s*id\b/i.test(views.lower) ||
     /\bface\s*id\b[^\n]{0,24}\b(not\s*work(?:ing)?|issue|problem|broken|defect|dead|guba)\b/i.test(views.lower) ||
@@ -378,12 +378,12 @@ export function detectIssues(text) {
     /\b(true\s*tone|truetone|trutone|trueton)\b[^\n]{0,6}[✅✔️]/i.test(views.lower) ||
     /[✅✔️][^\n]{0,6}\b(true\s*tone|truetone|trutone|trueton)\b/i.test(views.lower);
   const truetoneBadEmoji =
-    /\b(true\s*tone|truetone|trutone|trueton)\b[^\n]{0,6}(?:❌|✗|✘|x)\b/i.test(views.lower) ||
-    /(?:❌|✗|✘|x)[^\n]{0,6}\b(true\s*tone|truetone|trutone|trueton)\b/i.test(views.lower);
+    /\b(true\s*tone|truetone|trutone|trueton)\b[^\n]{0,6}(?:❌|✗|✘|\bx\b)/i.test(views.lower) ||
+    /(?:❌|✗|✘|\bx\b)[^\n]{0,6}\b(true\s*tone|truetone|trutone|trueton)\b/i.test(views.lower);
 
   const truetoneMissing =
     (truetone.negative || truetoneNoPhrase || truetoneBadEmoji) && !truetoneWorkingPhrase && !truetoneWorkingEmoji;
-  const faceNotWorking = !!face.negative && (faceNegPhrase || faceBadEmoji);
+  const faceNotWorking = faceBadEmoji ? true : !!face.negative && faceNegPhrase;
   const faceWorking =
     (faceWorkingPhrase || faceWorkingEmoji) && !faceNegPhrase
       ? true
@@ -424,17 +424,43 @@ export function detectIssues(text) {
     /\b(lcd|screen|display)\b[^\n]{0,32}\b(replace|replaced|replacement)\b/i.test(views.lower) &&
     /\b(apple\s*service\s*center|service\s*center|genuine|original)\b/i.test(views.lower);
 
-  const screenNegative = (screen.negative || issueHits.screen || touchIssue) && !screenReplacementOnly;
+  const crackLineOnly = /\bcracklines?\b/i.test(views.lower);
+
+  const screenCrackLcd =
+    /\b(crack|cracked|crackline|cracklines|basag|buka)\b[^\n]{0,12}\b(lcd|screen|display)\b/i.test(views.lower) ||
+    /\b(lcd|screen|display)\b[^\n]{0,12}\b(crack|cracked|crackline|cracklines|basag|buka)\b/i.test(views.lower);
+
+  const screenNegative =
+    (screen.negative || issueHits.screen || touchIssue || screenCrackLcd || crackLineOnly) && !screenReplacementOnly;
   const networkNegative = network.negative || issueHits.network;
+
+  const backCrack =
+    /\b(crack|cracked|basag|buka)\b[^\n]{0,16}\bback\b/i.test(views.lower) ||
+    /\bback\b[^\n]{0,16}\b(crack|cracked|basag|buka)\b/i.test(views.lower);
+  const backReplacementMention =
+    /\b(?:back\s*glass|backglass|backglas)\b[^\n]{0,16}\b(?:bag[- ]?o\s*(?:na\s*)?)?(?:replace|replaced|replacement|change|changed|nachange|ilis|islan|isli)\b/i.test(views.lower) ||
+    /\b(?:bag[- ]?o\s*(?:na\s*)?)?(?:replace|replaced|replacement|change|changed|nachange|ilis|islan|isli)\b[^\n]{0,16}\b(?:back\s*glass|backglass|backglas)\b/i.test(views.lower);
 
   const batteryReplacementMention =
     /\b(battery|batt)\b[^\n]{0,40}\b(replace|replaced|replacement|change|changed|nachange)\b/i.test(views.lower);
+  const batteryNoChange =
+    /\bno\b[^\n]{0,4}\b(battery|batt)\b[^\n]{0,10}\b(change|changed|replace|replaced|replacement|nachange)\b/i.test(views.lower) ||
+    /\bno\b[^\n]{0,10}\b(change|changed|replace|replaced|replacement|nachange)\b[^\n]{0,10}\b(battery|batt)\b/i.test(views.lower);
   const lcdReplacementMention =
     /\b(replace|replaced|replacement|change|changed|nachange)\b[^\n]{0,12}\b(lcd|oled|screen|display)\b/i.test(views.lower);
   const batteryReplacementTight =
     /\b(battery|batt)\b[^\n]{0,6}\b(replace|replaced|replacement|change|changed|nachange)\b/i.test(views.lower);
   const batteryNegative =
-    battery.negative && !(batteryReplacementMention && lcdReplacementMention && !batteryReplacementTight);
+    battery.negative &&
+    !batteryNoChange &&
+    !(batteryReplacementMention && lcdReplacementMention && !batteryReplacementTight);
+
+  const powerAccessoryMention =
+    /\bpower\b[^\n]{0,8}\b(brick|adapter|charger|cable)\b/i.test(views.lower);
+  const buttonFeatureMention =
+    /\b(volume|button|key|lock|side)\b/i.test(views.lower);
+  const buttonNegative =
+    button.negative && !(powerAccessoryMention && !buttonFeatureMention);
 
   return {
     face_id_working: faceWorking,
@@ -442,14 +468,17 @@ export function detectIssues(text) {
     trutone_working: truetoneWorking,
     trutone_missing: !!truetoneMissing,
     lcd_replaced: !!lcd.negative,
-    back_glass_replaced: !!back.negative && views.lower.includes("replace"),
-    back_glass_cracked: !!back.negative && (views.lower.includes("crack") || views.lower.includes("buka") || views.lower.includes("basag")),
+    back_glass_replaced: backReplacementMention || (!!back.negative && views.lower.includes("replace")),
+    back_glass_cracked:
+      !backReplacementMention &&
+      ((!!back.negative && (views.lower.includes("crack") || views.lower.includes("buka") || views.lower.includes("basag"))) ||
+        backCrack),
     battery_replaced: !!batteryNegative,
     camera_issue: cameraNegative,
     screen_issue: screenNegative,
     network_locked: networkNegative,
     wifi_only: !!wifi.negative && views.lower.includes("wifi"),
-    button_issue: !!button.negative,
+    button_issue: !!buttonNegative,
     audio_issue: !!audio.negative
   };
 }
