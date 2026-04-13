@@ -232,7 +232,7 @@ export default async function Home({
                 defaultValue={params.nearby}
                 className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:h-10"
               >
-              <option value="1">Include nearby (Bacolod, Silay, Guimaras)</option>
+              <option value="1">Nearby (Bacolod+)</option>
               <option value="0">Iloilo only</option>
             </select>
           </div>
@@ -369,9 +369,9 @@ export default async function Home({
                           </div>
                         ) : null}
 
-                        <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                          <span className="font-mono">id={row.listing_id}</span>
-                          <span className="font-mono">
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                          <span className="font-mono break-all">id={row.listing_id}</span>
+                          <span className="font-mono whitespace-nowrap">
                             {formatRelativeAge(row.posted_at || row.first_seen_at, nowMs)}
                             {!row.posted_at ? " (est.)" : ""}
                           </span>
