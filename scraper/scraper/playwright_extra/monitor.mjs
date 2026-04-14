@@ -221,7 +221,8 @@ async function recheckOne(page, candidate, opts, index, total) {
       ? await page.evaluate(() => document.body?.innerText || "")
       : "";
     if (useDomText && looksLikeLoginOrBlock(page.url(), bodyText)) {
-      throw new Error("Session looks logged out or blocked.");
+      if (opts.abortRef) opts.abortRef.blocked = true;
+      throw new Error("SESSION_BLOCKED");
     }
 
     const meta =
@@ -769,6 +770,9 @@ async function recheckOne(page, candidate, opts, index, total) {
   } catch (error) {
     const title = await safePageTitle(page);
     const msg = error instanceof Error ? error.message : String(error);
+    if (msg.includes("SESSION_BLOCKED") && opts.abortRef) {
+      opts.abortRef.blocked = true;
+    }
     opts.log?.(`[WARN] monitor_failed listing_id=${listingId} error=${msg.slice(0, 160)} title=${title}`);
     return null;
   } finally {
@@ -778,6 +782,8 @@ async function recheckOne(page, candidate, opts, index, total) {
 
 async function recheckParallel(context, candidates, opts) {
   const concurrency = Math.max(1, Math.min(opts.concurrency || 1, 6, candidates.length || 1));
+  const abortRef = opts.abortRef || { blocked: false };
+  opts.abortRef = abortRef;
   const pages = [];
     for (let i = 0; i < concurrency; i += 1) {
       const page = await context.newPage();
@@ -818,12 +824,14 @@ async function recheckParallel(context, candidates, opts) {
 
   async function worker(page) {
     for (;;) {
+      if (abortRef.blocked) return;
       const myIndex = cursor;
       cursor += 1;
       if (myIndex >= total) return;
       const candidate = candidates[myIndex];
       const row = await recheckOne(page, candidate, opts, myIndex + 1, total);
       if (row) out.push(row);
+      if (abortRef.blocked) return;
     }
   }
 
@@ -833,6 +841,7 @@ async function recheckParallel(context, candidates, opts) {
     await Promise.all(pages.map((p) => p.close().catch(() => {})));
   }
 
+  if (abortRef.blocked) throw new Error("SESSION_BLOCKED");
   return out;
 }
 

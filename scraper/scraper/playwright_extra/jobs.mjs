@@ -166,10 +166,26 @@ export async function runDiscoveryJob({
 
     const bodyText = await page.evaluate(() => document.body?.innerText || "");
     if (looksLikeLoginOrBlock(page.url(), bodyText)) {
-      throw new Error(
-        "Facebook session looks logged out or blocked for this profile/channel. " +
-          "Run with --bootstrap-login using the same --browser-channel."
-      );
+      markLoginRequired({ log, phase: "discovery", reason: "session_blocked" });
+      log("[WARN] discovery_aborted reason=session_blocked action=rebootstrap_login");
+      await persistScrapeRunMetrics({
+        runId,
+        phase: "discovery",
+        status: "failed",
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        metrics: {
+          aborted_reason: "session_blocked"
+        },
+        log
+      });
+      return {
+        cardsSeen: 0,
+        rowsExtracted: 0,
+        inserted: 0,
+        skippedExisting: 0,
+        versionsInserted: 0
+      };
     }
 
     const extracted = await extractDiscoveryRows(page, {
@@ -423,6 +439,24 @@ function collectSamples(dst, res, limit) {
   }
 }
 
+function markLoginRequired({ log, phase, reason }) {
+  try {
+    const dirPath = path.resolve(".tmp");
+    fs.mkdirSync(dirPath, { recursive: true });
+    const payload = {
+      ts: new Date().toISOString(),
+      phase: String(phase || "unknown"),
+      reason: String(reason || "unknown")
+    };
+    const phaseSafe = payload.phase.replace(/[^a-z0-9_-]/gi, "_");
+    const perPhase = path.join(dirPath, `login_required-${phaseSafe}.json`);
+    const latest = path.join(dirPath, "login_required.json");
+    fs.writeFileSync(perPhase, JSON.stringify(payload, null, 2));
+    fs.writeFileSync(latest, JSON.stringify(payload, null, 2));
+    log?.(`[WARN] login_required marker=${perPhase} phase=${payload.phase} reason=${payload.reason}`);
+  } catch {}
+}
+
 export async function runMonitorJob({
   context,
   cfg,
@@ -455,6 +489,7 @@ export async function runMonitorJob({
   let noneHitCount = 0;
   let embedCheckedTotal = 0;
   let embedMatchedTotal = 0;
+  let abortedReason = null;
   const logChanges = envBool("DB_LOG_CHANGES", false);
   const changeSamples = [];
   const changeLimit = Math.max(0, Number.parseInt(process.env.DB_LOG_CHANGE_LIMIT || "25", 10) || 25);
@@ -463,26 +498,38 @@ export async function runMonitorJob({
   try {
     for (let i = 0; i < candidates.length; i += size) {
       const chunk = candidates.slice(i, i + size);
-      // eslint-disable-next-line no-await-in-loop
-      const out = await recheckCandidatesChunk({
-        context,
-        runId,
-        queryUrl: cfg.queryUrl,
-        gotoRetries: cfg.gotoRetries,
-        delayMin: cfg.delayMin,
-        delayMax: cfg.delayMax,
-        concurrency: cfg.watchlistConcurrency,
-        candidates: chunk,
-        logEnabled: cfg.logEnabled,
-        log,
-        label: "monitor",
-        blockImages: cfg.monitorBlockImages,
-        waitForNetworkIdle: cfg.monitorWaitForNetworkIdle,
-        useNetwork: cfg.monitorUseNetwork,
-        saveNetworkRaw: cfg.saveNetworkRaw,
-        progressBase: i,
-        progressTotal: candidates.length
-      });
+      let out = [];
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        out = await recheckCandidatesChunk({
+          context,
+          runId,
+          queryUrl: cfg.queryUrl,
+          gotoRetries: cfg.gotoRetries,
+          delayMin: cfg.delayMin,
+          delayMax: cfg.delayMax,
+          concurrency: cfg.watchlistConcurrency,
+          candidates: chunk,
+          logEnabled: cfg.logEnabled,
+          log,
+          label: "monitor",
+          blockImages: cfg.monitorBlockImages,
+          waitForNetworkIdle: cfg.monitorWaitForNetworkIdle,
+          useNetwork: cfg.monitorUseNetwork,
+          saveNetworkRaw: cfg.saveNetworkRaw,
+          progressBase: i,
+          progressTotal: candidates.length
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.includes("SESSION_BLOCKED")) {
+          abortedReason = "session_blocked";
+          log(`[WARN] monitor_aborted reason=session_blocked action=rebootstrap_login`);
+          log(`[WARN] login_required hint="Run bootstrap login: bash scripts/bootstrap_login.sh monitor"`);
+          break;
+        }
+        throw e;
+      }
 
       rows.push(...out);
       for (const row of out) {
@@ -545,10 +592,13 @@ export async function runMonitorJob({
     `[INFO] monitor_sources network=${networkHitCount} embed=${embedHitCount} none=${noneHitCount} ` +
       `embed_checked=${embedCheckedTotal} embed_matched=${embedMatchedTotal}`
   );
+  if (abortedReason) {
+    markLoginRequired({ log, phase: "monitor", reason: abortedReason });
+  }
   await persistScrapeRunMetrics({
     runId,
     phase: "monitor",
-    status: "success",
+    status: abortedReason ? "failed" : "success",
     startedAt,
     finishedAt: new Date().toISOString(),
     metrics: {
@@ -560,7 +610,8 @@ export async function runMonitorJob({
       embed_hits: embedHitCount,
       none_hits: noneHitCount,
       embed_checked: embedCheckedTotal,
-      embed_matched: embedMatchedTotal
+      embed_matched: embedMatchedTotal,
+      aborted_reason: abortedReason
     },
     log
   });

@@ -41,7 +41,12 @@ export function loadDotenv() {
     .filter(Boolean);
 
   for (const envPath of candidates) {
-    dotenv.config({ path: envPath, override: true });
+    // Default behavior: do not override already-set env vars.
+    // This lets wrapper scripts (and systemd units) intentionally override specific vars like
+    // `PLAYWRIGHT_PROFILE_DIR` per job while still allowing `.env` to supply defaults.
+    const override =
+      ["1", "true", "yes", "on"].includes(String(process.env.DOTENV_OVERRIDE || "").trim().toLowerCase());
+    dotenv.config({ path: envPath, override });
     if ((process.env.DOTENV_DEBUG || "").trim()) {
       // Avoid printing any env values; just show which file was loaded.
       // eslint-disable-next-line no-console

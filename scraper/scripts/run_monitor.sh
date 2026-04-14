@@ -15,6 +15,43 @@ if [[ -f "${REPO_ROOT}/.env" ]]; then
   set +a
 fi
 
+# Optional: allow a separate persistent profile for monitor (e.g. account rotation).
+# If unset, falls back to PLAYWRIGHT_PROFILE_DIR from `.env`.
+if [[ -n "${PLAYWRIGHT_PROFILE_DIR_MONITOR:-}" ]]; then
+  export PLAYWRIGHT_PROFILE_DIR="${PLAYWRIGHT_PROFILE_DIR_MONITOR}"
+fi
+
+JITTER_MAX="${SCRAPE_RUN_JITTER_MAX_S:-0}"
+if [[ "${JITTER_MAX}" =~ ^[0-9]+$ ]] && [[ "${JITTER_MAX}" -gt 0 ]]; then
+  JITTER_SLEEP=$((RANDOM % (JITTER_MAX + 1)))
+  echo "[INFO] monitor: jitter_sleep_seconds=${JITTER_SLEEP}"
+  sleep "${JITTER_SLEEP}"
+fi
+
+# If the last run detected a blocked session, avoid hammering while the user rebootsraps login.
+MARKER="${REPO_ROOT}/.tmp/login_required-monitor.json"
+COOLDOWN_MINUTES="${LOGIN_REQUIRED_COOLDOWN_MINUTES:-180}"
+if [[ -f "${MARKER}" ]] && command -v node >/dev/null 2>&1; then
+  if node -e '
+const fs = require("fs");
+const marker = process.argv[1];
+const cooldownMin = Number(process.argv[2] || "180");
+try {
+  const j = JSON.parse(fs.readFileSync(marker, "utf8"));
+  const ts = Date.parse(j.ts || "");
+  if (!Number.isFinite(ts)) process.exit(1);
+  const ageMin = (Date.now() - ts) / 60000;
+  process.exit(ageMin < cooldownMin ? 0 : 1);
+} catch {
+  process.exit(1);
+}
+' "${MARKER}" "${COOLDOWN_MINUTES}"; then
+    echo "[WARN] monitor: login_required cooldown_active_minutes=${COOLDOWN_MINUTES} marker=${MARKER} (skipping run)"
+    bash "${REPO_ROOT}/scripts/notify_telegram.sh" monitor || true
+    exit 0
+  fi
+fi
+
 LOCK_FILE="${REPO_ROOT}/.tmp/monitor.lock"
 exec 9>"${LOCK_FILE}"
 if command -v flock >/dev/null 2>&1; then
@@ -47,4 +84,8 @@ if [[ "$#" -gt 0 ]]; then
 fi
 
 echo "[INFO] monitor: starting browser_channel=${BROWSER_CHANNEL} limit=${LIMIT}"
+echo "[INFO] monitor: profile_dir=${PLAYWRIGHT_PROFILE_DIR:-<unset>}"
 npm run -s sniffer:playwright-extra:monitor -- "${ARGS[@]}"
+
+# Notify if the run detected a logged-out/blocked session.
+bash "${REPO_ROOT}/scripts/notify_telegram.sh" monitor || true
