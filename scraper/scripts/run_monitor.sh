@@ -21,11 +21,33 @@ if [[ -n "${PLAYWRIGHT_PROFILE_DIR_MONITOR:-}" ]]; then
   export PLAYWRIGHT_PROFILE_DIR="${PLAYWRIGHT_PROFILE_DIR_MONITOR}"
 fi
 
+# Give discovery a head start in case both services fire together (common after restarting timers).
+# This reduces the chance monitor grabs the global lock first.
+MONITOR_START_DELAY_S="${SCRAPE_MONITOR_START_DELAY_S:-15}"
+if [[ "${MONITOR_START_DELAY_S}" =~ ^[0-9]+$ ]] && [[ "${MONITOR_START_DELAY_S}" -gt 0 ]]; then
+  echo "[INFO] monitor: start_delay_seconds=${MONITOR_START_DELAY_S}"
+  sleep "${MONITOR_START_DELAY_S}"
+fi
+
 JITTER_MAX="${SCRAPE_RUN_JITTER_MAX_S:-0}"
 if [[ "${JITTER_MAX}" =~ ^[0-9]+$ ]] && [[ "${JITTER_MAX}" -gt 0 ]]; then
   JITTER_SLEEP=$((RANDOM % (JITTER_MAX + 1)))
   echo "[INFO] monitor: jitter_sleep_seconds=${JITTER_SLEEP}"
   sleep "${JITTER_SLEEP}"
+fi
+
+# Global lock to prevent discovery/monitor overlap (helps on slow networks and avoids FB automation spikes).
+GLOBAL_LOCK_FILE="${REPO_ROOT}/.tmp/scrape-global.lock"
+exec 8>"${GLOBAL_LOCK_FILE}"
+GLOBAL_LOCK_WAIT_S="${SCRAPE_GLOBAL_LOCK_WAIT_S:-7200}"
+if command -v flock >/dev/null 2>&1; then
+  echo "[INFO] monitor: waiting_global_lock_seconds=${GLOBAL_LOCK_WAIT_S}"
+  if ! flock -w "${GLOBAL_LOCK_WAIT_S}" 8; then
+    echo "[WARN] monitor: global_lock_timeout_seconds=${GLOBAL_LOCK_WAIT_S} (skipping run)"
+    exit 0
+  fi
+else
+  echo "[WARN] monitor: flock not found; discovery/monitor may overlap"
 fi
 
 # If the last run detected a blocked session, avoid hammering while the user rebootsraps login.

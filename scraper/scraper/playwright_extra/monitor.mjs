@@ -294,7 +294,7 @@ async function recheckOne(page, candidate, opts, index, total) {
     if (useDomStatus && envBool("SCRAPE_DEBUG_STATUS_TEXT", false)) {
       const snippet = cleanText(statusText)?.slice(0, 200) || "n/a";
       opts.log?.(
-        `[INFO] monitor_status_check listing_id=${listingId} unavailable=${isUnavailableText} sold=${isSoldText} ` +
+        `[INFO] ${label}_status_check listing_id=${listingId} unavailable=${isUnavailableText} sold=${isSoldText} ` +
           `match="${statusDebug?.match || "n/a"}" snippet="${snippet}"`
       );
     }
@@ -519,7 +519,7 @@ async function recheckOne(page, candidate, opts, index, total) {
         const errors = Array.isArray(payload?.errors) ? payload.errors.length : 0;
         if (keys.length || errors) {
           opts.log?.(
-            `[INFO] monitor_network_keys listing_id=${listingId} keys=${keys.join("|") || "n/a"} ` +
+            `[INFO] ${label}_network_keys listing_id=${listingId} keys=${keys.join("|") || "n/a"} ` +
               `errors=${errors}`
           );
         }
@@ -534,16 +534,17 @@ async function recheckOne(page, candidate, opts, index, total) {
           if (payload.length) {
             const dirPath = path.resolve("logs");
             fs.mkdirSync(dirPath, { recursive: true });
-            const target = path.join(dirPath, `monitor-network-${opts.runId}.json`);
+            const dumpPrefix = cleanText(opts.label) || "monitor";
+            const target = path.join(dirPath, `${dumpPrefix}-network-${opts.runId}.json`);
             fs.writeFileSync(target, JSON.stringify(payload, null, 2));
             opts.networkDump.saved = true;
-            opts.log?.(`[INFO] monitor_network_saved path=${target} items=${payload.length}`);
+            opts.log?.(`[INFO] ${label}_network_saved path=${target} items=${payload.length}`);
           }
         } catch {}
       }
       if (opts.logEnabled) {
         opts.log?.(
-          `[INFO] monitor_network listing_id=${listingId} found=${networkRow ? "yes" : "no"} ` +
+          `[INFO] ${label}_network listing_id=${listingId} found=${networkRow ? "yes" : "no"} ` +
             `network_listings=${state?.networkListings?.size ?? 0} network_candidates=${state?.networkCandidates ?? 0} ` +
             `network_json_responses=${state?.networkJsonResponses ?? 0}`
         );
@@ -601,7 +602,7 @@ async function recheckOne(page, candidate, opts, index, total) {
                 const hasDesc = cleanText(hit?.description) ? "yes" : "no";
                 opts.embedKeysLogged = true;
                 opts.log?.(
-                  `[INFO] monitor_embed_keys listing_id=${listingId} keys=${keys.join("|") || "n/a"} desc=${hasDesc}`
+                  `[INFO] ${label}_embed_keys listing_id=${listingId} keys=${keys.join("|") || "n/a"} desc=${hasDesc}`
                 );
               }
               break;
@@ -612,7 +613,7 @@ async function recheckOne(page, candidate, opts, index, total) {
 
         if (opts.logEnabled && embeddedChecked) {
           opts.log?.(
-            `[INFO] monitor_embed listing_id=${listingId} found=${networkRow ? "yes" : "no"} ` +
+            `[INFO] ${label}_embed listing_id=${listingId} found=${networkRow ? "yes" : "no"} ` +
               `checked=${embeddedChecked} matched=${embeddedMatched}`
           );
         }
@@ -640,14 +641,12 @@ async function recheckOne(page, candidate, opts, index, total) {
         if (cleanText(networkRow.listing_location_state)) push("listing_location_state");
         if (cleanText(networkRow.location_raw)) push("location_raw");
         if (cleanText(networkRow.listing_status)) push("listing_status");
-        opts.log?.(
-          `[INFO] monitor_embed_fields listing_id=${listingId} fields=${fields.join("|") || "n/a"}`
-        );
+        opts.log?.(`[INFO] ${label}_embed_fields listing_id=${listingId} fields=${fields.join("|") || "n/a"}`);
       }
       if (networkRow && networkSource === "embed" && envBool("SCRAPE_DEBUG_EMBED_SAMPLE", false)) {
         const preview = (value, max = 80) => cleanText(value)?.slice(0, max) || "n/a";
         opts.log?.(
-          `[INFO] monitor_embed_sample listing_id=${listingId} ` +
+          `[INFO] ${label}_embed_sample listing_id=${listingId} ` +
             `title="${preview(networkRow.title, 60)}" price_raw="${preview(networkRow.price_raw, 32)}" ` +
             `price_fmt="${preview(networkRow.listing_price_formatted, 32)}" price_amt=${networkRow.listing_price_amount ?? "n/a"} ` +
             `sold=${networkRow.listing_is_sold ?? "n/a"} pending=${networkRow.listing_is_pending ?? "n/a"} ` +
@@ -773,7 +772,8 @@ async function recheckOne(page, candidate, opts, index, total) {
     if (msg.includes("SESSION_BLOCKED") && opts.abortRef) {
       opts.abortRef.blocked = true;
     }
-    opts.log?.(`[WARN] monitor_failed listing_id=${listingId} error=${msg.slice(0, 160)} title=${title}`);
+    const prefix = cleanText(opts.label) || "monitor";
+    opts.log?.(`[WARN] ${prefix}_failed listing_id=${listingId} error=${msg.slice(0, 160)} title=${title}`);
     return null;
   } finally {
     networkCollector?.dispose?.();

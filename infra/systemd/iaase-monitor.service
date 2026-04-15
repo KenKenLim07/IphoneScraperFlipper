@@ -1,7 +1,7 @@
 [Unit]
-Description=IAASE Facebook Marketplace - Monitor
+Description=IAASE Marketplace - Monitor
 Wants=network-online.target
-After=network-online.target
+After=network-online.target iaase-discover.service
 
 [Service]
 Type=oneshot

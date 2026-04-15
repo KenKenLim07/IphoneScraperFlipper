@@ -28,6 +28,20 @@ if [[ "${JITTER_MAX}" =~ ^[0-9]+$ ]] && [[ "${JITTER_MAX}" -gt 0 ]]; then
   sleep "${JITTER_SLEEP}"
 fi
 
+# Global lock to prevent discovery/monitor overlap (helps on slow networks and avoids FB automation spikes).
+GLOBAL_LOCK_FILE="${REPO_ROOT}/.tmp/scrape-global.lock"
+exec 8>"${GLOBAL_LOCK_FILE}"
+GLOBAL_LOCK_WAIT_S="${SCRAPE_GLOBAL_LOCK_WAIT_S:-7200}"
+if command -v flock >/dev/null 2>&1; then
+  echo "[INFO] discover: waiting_global_lock_seconds=${GLOBAL_LOCK_WAIT_S}"
+  if ! flock -w "${GLOBAL_LOCK_WAIT_S}" 8; then
+    echo "[WARN] discover: global_lock_timeout_seconds=${GLOBAL_LOCK_WAIT_S} (skipping run)"
+    exit 0
+  fi
+else
+  echo "[WARN] discover: flock not found; discovery/monitor may overlap"
+fi
+
 # If the last run detected a blocked session, avoid hammering while the user rebootsraps login.
 MARKER="${REPO_ROOT}/.tmp/login_required-discovery.json"
 COOLDOWN_MINUTES="${LOGIN_REQUIRED_COOLDOWN_MINUTES:-180}"

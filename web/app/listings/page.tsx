@@ -226,13 +226,14 @@ export default async function Home({
               <label className="mb-1 block text-[11px] font-medium text-muted-foreground sm:text-xs" htmlFor="nearby">
                 Area
               </label>
-              <select
-                id="nearby"
-                name="nearby"
-                defaultValue={params.nearby}
-                className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:h-10"
-              >
-              <option value="1">Nearby (Bacolod+)</option>
+            <select
+              id="nearby"
+              name="nearby"
+              defaultValue={params.nearby}
+              title="Nearby = Bacolod, Silay, Guimaras"
+              className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:h-10"
+            >
+              <option value="1">Includes nearby</option>
               <option value="0">Iloilo only</option>
             </select>
           </div>

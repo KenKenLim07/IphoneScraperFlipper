@@ -55,3 +55,6 @@ npm --prefix scraper run -s sniffer:playwright-extra
 ```bash
 npm --prefix scraper run -s env:audit
 ```
+node scraper/scripts/replay_pending.mjs scraper/logs/pending-monitor-e101b299-a847-4873-b3f9-88e9c69e3907.json
+
+node scraper/scripts/replay_pending.mjs

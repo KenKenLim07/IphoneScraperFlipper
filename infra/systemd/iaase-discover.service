@@ -1,5 +1,5 @@
 [Unit]
-Description=IAASE Facebook Marketplace - Discovery
+Description=IAASE Marketplace - Discovery
 Wants=network-online.target
 After=network-online.target
 
