@@ -131,10 +131,16 @@ const FEATURE_RULES = {
     sequences: [["microphone"], ["mic"], ["speaker"], ["earpiece"], ["loudspeaker"]],
     singles: ["microphone", "mic", "speaker", "earpiece", "loudspeaker"],
     collapsed: ["microphone", "mic", "speaker", "earpiece", "loudspeaker"],
-    positives: ["working", "ok", "okay", "functional", "gagana", "gana", "naga"],
-    negatives: ["issue", "problem", "broken", "defect", "dead", "notwork", "notworking", "guba", "no", "wala", "wla", "di", "dili", "dli"],
+    positives: ["working", "ok", "okay", "functional", "good", "gagana", "gana", "naga"],
+    negatives: [
+      "issue", "problem", "broken", "defect", "dead", "guba",
+      "not", "no", "wala", "wla", "di", "dili", "dli", "indi", "way", "waay",
+      "notwork", "notworking", "cant", "cannot"
+    ],
     allowFallbackWorking: false,
-    mentionImpliesIssue: true
+    // Audio is commonly listed as part of "all functions working" checklists.
+    // Only flag when there's an explicit negative ("no mic", "speaker issue", etc.).
+    mentionImpliesIssue: false
   }
 };
 
@@ -221,7 +227,26 @@ function collapsedHasNegativeNear(collapsed, feature, negatives) {
     if (!n) continue;
     let idx = collapsed.indexOf(n);
     while (idx !== -1) {
+      if (n === "no") {
+        // "no issue(s)" / "no problem(s)" means "nothing is wrong" and should not
+        // be treated as a negative signal for nearby features.
+        if (
+          collapsed.startsWith("noissue", idx) ||
+          collapsed.startsWith("noissues", idx) ||
+          collapsed.startsWith("noproblem", idx) ||
+          collapsed.startsWith("noproblems", idx)
+        ) {
+          idx = collapsed.indexOf(n, idx + n.length);
+          continue;
+        }
+      }
       if (n === "issue") {
+        if (idx >= 2 && collapsed.slice(idx - 2, idx) === "no") {
+          idx = collapsed.indexOf(n, idx + n.length);
+          continue;
+        }
+      }
+      if (n === "problem") {
         if (idx >= 2 && collapsed.slice(idx - 2, idx) === "no") {
           idx = collapsed.indexOf(n, idx + n.length);
           continue;
@@ -273,6 +298,8 @@ function hasNegTokenNear(tokens, positions, tokenSet, window = 2) {
     for (let i = start; i <= end; i++) {
       const token = tokens[i];
       if (!tokenSet.has(token)) continue;
+      // "no issue" / "no problem" means "nothing is wrong", not a missing/broken feature.
+      if (token === "no" && (tokens[i + 1] === "issue" || tokens[i + 1] === "problem")) continue;
       if (token === "issue" && tokens[i - 1] === "no") continue;
       return true;
     }

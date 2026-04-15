@@ -221,6 +221,30 @@ test("audio mentions marked working do not flag", () => {
   );
 });
 
+test("audio mentions marked good do not flag", () => {
+  const issues = detectIssues("Good Sounds & Mic Good");
+  assert.deepEqual(
+    pick(issues, ["audio_issue"]),
+    { audio_issue: false }
+  );
+});
+
+test("'no issue' near mic should not flag audio issue", () => {
+  const issues = detectIssues("Mic ok, no issue");
+  assert.deepEqual(
+    pick(issues, ["audio_issue"]),
+    { audio_issue: false }
+  );
+});
+
+test("all functions working checklist should not flag audio", () => {
+  const issues = detectIssues("All functions working (camera, speaker, wifi, charging)|");
+  assert.deepEqual(
+    pick(issues, ["audio_issue"]),
+    { audio_issue: false }
+  );
+});
+
 test("face id checkmark counts as working", () => {
   const issues = detectIssues("FACE ID ✅");
   assert.deepEqual(

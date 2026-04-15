@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { loadDotenv } from "../scraper/env.mjs";
 import { detectIssues, buildDebugReasons, hasIcloudRisk } from "./deal_text.mjs";
+import { parseStorageGb } from "./parse_storage.mjs";
 
 loadDotenv();
 
@@ -93,17 +94,6 @@ function parseVariant(text, modelFamily) {
   }
 
   return "base";
-}
-
-function parseStorageGb(text) {
-  const s = String(text || "");
-  const m = /\b(\d{2,4})\s*(gb|g|tb|t)\b/i.exec(s);
-  if (!m) return null;
-  const num = Number.parseInt(m[1], 10);
-  if (!Number.isFinite(num) || num <= 0) return null;
-  const unit = String(m[2] || "").toLowerCase();
-  if (unit === "tb" || unit === "t") return num * 1024;
-  return num;
 }
 
 function parseBatteryHealth(text) {

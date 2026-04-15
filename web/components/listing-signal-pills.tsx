@@ -4,11 +4,9 @@ import {
   Battery,
   CameraOff,
   CloudOff,
-  CheckCircle2,
   FileWarning,
   Lock,
   Mic,
-  Minus,
   Monitor,
   ScanFace,
   SunMedium,
@@ -16,7 +14,6 @@ import {
   Wrench,
   CardSim,
   Wifi,
-  XCircle,
   Unlock
 } from "lucide-react";
 
@@ -62,33 +59,6 @@ function Pill({ label, title, icon: Icon, tone, mono }: PillProps) {
   );
 }
 
-type ChecklistStatus = "good" | "bad" | "unknown";
-
-const checklistStatusMeta: Record<
-  ChecklistStatus,
-  {
-    label: string;
-    icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
-    className: string;
-  }
-> = {
-  good: {
-    label: "Working",
-    icon: CheckCircle2,
-    className: "text-emerald-500"
-  },
-  bad: {
-    label: "Issue",
-    icon: XCircle,
-    className: "text-rose-500"
-  },
-  unknown: {
-    label: "Unknown",
-    icon: Minus,
-    className: "text-muted-foreground"
-  }
-};
-
 export function PublicListingChecklist({
   riskFlags,
   openline,
@@ -100,66 +70,34 @@ export function PublicListingChecklist({
 }) {
   const flags = parseRiskFlags(riskFlags);
 
-  const faceStatus: ChecklistStatus = flags.face_id_not_working
-    ? "bad"
-    : flags.face_id_working
-      ? "good"
-      : "unknown";
-  const trutoneStatus: ChecklistStatus = flags.trutone_missing
-    ? "bad"
-    : flags.trutone_working
-      ? "good"
-      : "unknown";
-  const openlineStatus: ChecklistStatus = flags.network_locked
-    ? "bad"
-    : openline === true
-      ? "good"
-      : "unknown";
+  const faceTone: PillTone = flags.face_id_not_working ? "bad" : flags.face_id_working ? "good" : "unknown";
+  const trutoneTone: PillTone = flags.trutone_missing ? "bad" : flags.trutone_working ? "good" : "unknown";
+  const simTone: PillTone = flags.network_locked ? "bad" : openline === true ? "good" : "unknown";
 
-  const items = [
-    {
-      key: "faceid",
-      label: "Face ID",
-      status: faceStatus,
-      title:
-        faceStatus === "unknown"
-          ? "Face ID status unknown"
-          : `Face ID ${faceStatus === "good" ? "working" : "not working"}`
-    },
-    {
-      key: "truetone",
-      label: "TrueTone",
-      status: trutoneStatus,
-      title:
-        trutoneStatus === "unknown"
-          ? "TrueTone status unknown"
-          : `TrueTone ${trutoneStatus === "good" ? "working" : "missing"}`
-    },
-    {
-      key: "openline",
-      label: "Openline",
-      status: openlineStatus,
-      title:
-        openlineStatus === "unknown"
-          ? "SIM status unknown"
-          : openlineStatus === "good"
-            ? "Openline (any SIM)"
-            : "Network locked"
-    }
-  ];
+  const simIcon = flags.network_locked ? Lock : openline === true ? Unlock : CardSim;
+  const simLabel = flags.network_locked ? "Locked" : openline === true ? "Openline" : "SIM";
+  const simTitle = flags.network_locked ? "Network locked" : openline === true ? "Openline (any SIM)" : "SIM status unknown";
 
   return (
-    <div className={cn("flex flex-wrap items-center gap-2 text-[11px] sm:text-xs", className)}>
-      {items.map((item) => {
-        const meta = checklistStatusMeta[item.status];
-        const Icon = meta.icon;
-        return (
-          <div key={item.key} title={item.title} className="inline-flex items-center gap-1.5 text-muted-foreground">
-            <Icon className={cn("h-3.5 w-3.5", meta.className)} aria-hidden />
-            <span className="font-medium text-foreground">{item.label}</span>
-          </div>
-        );
-      })}
+    <div className={cn("flex flex-wrap items-center gap-1", className)}>
+      <Pill
+        label="Face ID"
+        title={faceTone === "unknown" ? "Face ID status unknown" : `Face ID ${faceTone === "good" ? "working" : "not working"}`}
+        icon={ScanFace}
+        tone={faceTone}
+      />
+      <Pill
+        label="TrueTone"
+        title={trutoneTone === "unknown" ? "TrueTone status unknown" : `TrueTone ${trutoneTone === "good" ? "working" : "missing"}`}
+        icon={SunMedium}
+        tone={trutoneTone}
+      />
+      <Pill
+        label={simLabel}
+        title={simTitle}
+        icon={simIcon}
+        tone={simTone}
+      />
     </div>
   );
 }
